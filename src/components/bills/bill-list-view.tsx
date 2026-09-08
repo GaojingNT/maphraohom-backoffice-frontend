@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Check,
   CheckSquare,
@@ -56,6 +57,7 @@ function periodLabelOf(key: string, mode: FilterMode): string {
 }
 
 export default function BillListView({ bills }: { bills: BillListItem[] }) {
+  const router = useRouter();
   const { showToast } = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -181,11 +183,17 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     });
   }
 
-  // Document generation itself (ADDENDUM-export.md §2-4) isn't built yet —
-  // this just closes the sheet, matching the stub pattern used elsewhere
-  // (print receipt, edit-before-/bills/[id]/edit existed, etc).
-  function handlePickDoc() {
-    showToast("ฟีเจอร์ export เอกสารอยู่ระหว่างพัฒนา");
+  function handlePickSummaryDoc() {
+    const ids = selectedBills.map((b) => b.id).join(",");
+    setExportSheetOpen(false);
+    router.push(`/bills/export/summary?ids=${ids}`);
+  }
+
+  // ใบเสร็จรับเงิน (ADDENDUM-export.md §4) isn't built yet — this just closes
+  // the sheet, matching the stub pattern used elsewhere (print receipt,
+  // edit-before-/bills/[id]/edit existed, etc).
+  function handlePickReceiptDoc() {
+    showToast("ฟีเจอร์ export ใบเสร็จรับเงินอยู่ระหว่างพัฒนา");
     setExportSheetOpen(false);
   }
 
@@ -599,7 +607,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => handlePickDoc()}
+                onClick={handlePickSummaryDoc}
                 className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
               >
                 <FileText size={20} className="flex-none text-accent" />
@@ -616,7 +624,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
               </button>
               <button
                 type="button"
-                onClick={() => handlePickDoc()}
+                onClick={handlePickReceiptDoc}
                 className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
               >
                 <Receipt size={20} className="flex-none text-accent" />

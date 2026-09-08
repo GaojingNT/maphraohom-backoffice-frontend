@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Archivo, Noto_Sans_Thai } from "next/font/google";
-import BottomNav from "@/components/bottom-nav";
 import ToastProvider from "@/components/toast-provider";
 import "./globals.css";
 
@@ -28,14 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${notoSansThai.variable} ${archivo.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-frame">
-        <ToastProvider>
-          <div className="flex min-h-dvh justify-center bg-frame">
-            <div className="relative flex min-h-dvh w-full max-w-[430px] flex-col bg-bg shadow-[0_0_0_1px_rgba(22,33,26,0.10)]">
-              {children}
-            </div>
-          </div>
-          <BottomNav />
-        </ToastProvider>
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );
