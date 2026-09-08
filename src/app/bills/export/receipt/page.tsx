@@ -233,10 +233,16 @@ export default async function ExportReceiptPage({
                 </div>
 
                 {rc.slip ? (
-                  <div
-                    className="mt-3 flex-1 border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3] bg-contain bg-center bg-no-repeat"
-                    style={{ backgroundImage: `url("${slipUrl(rc.slip)}")` }}
-                  />
+                  <div className="mt-3 flex min-h-0 flex-1 items-center justify-center border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3]">
+                    {/* Print/Save-as-PDF drop CSS background-images unless
+                        "Background graphics" is checked; a real <img> always
+                        prints, so the slip is rendered as content here. */}
+                    <img
+                      src={slipUrl(rc.slip)}
+                      alt="สลิปโอนเงิน"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
                 ) : (
                   <div className="mt-3 flex flex-1 flex-col items-center justify-center border border-dashed border-[rgba(22,33,26,0.4)] text-center text-[11px] leading-[1.5] font-semibold text-[#8a938c]">
                     <div>ไม่มีสลิปโอนเงินแนบกับบิลนี้</div>
