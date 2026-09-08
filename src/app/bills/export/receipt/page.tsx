@@ -84,7 +84,7 @@ export default async function ExportReceiptPage({
           receipts.map((rc) => (
             <div
               key={rc.id}
-              className="box-border flex h-[297mm] w-[210mm] flex-none flex-col break-after-page bg-white text-[#16211a] shadow-[0_8px_28px_rgba(0,0,0,0.35)] print:shadow-none"
+              className="box-border flex h-[297mm] w-[210mm] flex-none flex-col overflow-hidden break-after-page bg-white text-[#16211a] shadow-[0_8px_28px_rgba(0,0,0,0.35)] print:shadow-none"
             >
               {/* Top half */}
               <div className="box-border flex flex-1 flex-col border-b-2 border-dashed border-[rgba(22,33,26,0.45)] px-[44px] pt-[44px] pb-[24px]">
@@ -233,14 +233,22 @@ export default async function ExportReceiptPage({
                 </div>
 
                 {rc.slip ? (
-                  <div className="mt-3 flex min-h-0 flex-1 items-center justify-center border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3]">
+                  <div className="mt-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3]">
                     {/* Print/Save-as-PDF drop CSS background-images unless
-                        "Background graphics" is checked; a real <img> always
-                        prints, so the slip is rendered as content here. */}
+                        "Background graphics" is checked, so the slip is a
+                        real <img>. Its cap is an absolute length (not
+                        max-h-full/100%) because Chromium's print engine
+                        unreliably resolves percentage heights through
+                        nested flex during pagination — when it fails, the
+                        image falls back to its full intrinsic size (this
+                        slip is ~340mm tall, bigger than the whole page),
+                        blowing out the card and corrupting every bill's
+                        page break after it. overflow-hidden here and on
+                        the card above are a hard backstop either way. */}
                     <img
                       src={slipUrl(rc.slip)}
                       alt="สลิปโอนเงิน"
-                      className="max-h-full max-w-full object-contain"
+                      className="max-h-[100mm] max-w-full object-contain"
                     />
                   </div>
                 ) : (
