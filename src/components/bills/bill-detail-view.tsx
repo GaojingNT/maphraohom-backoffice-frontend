@@ -83,16 +83,13 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
               กลับ
             </Link>
             <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  showToast("แก้ไขบิล — ฟีเจอร์นี้อยู่ระหว่างพัฒนา")
-                }
+              <Link
+                href={`/bills/${bill.id}/edit`}
                 className="flex h-10 items-center gap-1.5 border border-divider bg-transparent px-3 text-[12px] font-semibold"
               >
                 <Pencil size={14} />
                 แก้ไข
-              </button>
+              </Link>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteOpen(true)}

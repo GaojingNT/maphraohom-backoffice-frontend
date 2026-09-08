@@ -2,12 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Package, Plus, Trash2, Upload } from "lucide-react";
-import { createBill } from "@/lib/api/bills";
+import {
+  Check,
+  ChevronDown,
+  Package,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { createBill, updateBill } from "@/lib/api/bills";
 import { getStoreProducts } from "@/lib/api/stores";
+import { API_BASE_URL } from "@/lib/api/config";
 import { formatBaht, formatKg } from "@/lib/format";
 import { useToast } from "@/components/toast-provider";
-import type { Store, StoreProductPrice } from "@/lib/types";
+import type { Bill, Store, StoreProductPrice } from "@/lib/types";
 
 interface FormItem {
   key: string;
@@ -21,6 +29,17 @@ interface FormErrors {
   customerAddress?: string;
   itemsList?: string;
   items: Record<string, string>;
+}
+
+type SlipState =
+  | { kind: "none" }
+  | { kind: "existing"; key: string }
+  | { kind: "new"; file: File; previewUrl: string };
+
+// Same caveat as the bill detail page: no static-serving route exists yet
+// for uploaded slips, so this degrades to a broken image until that exists.
+function slipUrl(slipKey: string): string {
+  return `${API_BASE_URL.replace(/\/api\/v1$/, "")}/storage/${slipKey}`;
 }
 
 function sanitizeNumberInput(raw: string): string {
@@ -46,20 +65,52 @@ function createFormItem(): FormItem {
   return { key: `i${itemKeySeq++}`, productId: null, kilogram: "" };
 }
 
-export default function CreateBillView({ stores }: { stores: Store[] }) {
+export default function BillFormView({
+  stores,
+  editingBill,
+  initialProducts,
+}: {
+  stores: Store[];
+  editingBill?: Bill;
+  initialProducts?: StoreProductPrice[];
+}) {
   const router = useRouter();
   const { showToast } = useToast();
+  const isEditing = !!editingBill;
 
-  const [storeId, setStoreId] = useState<number | null>(null);
-  const [products, setProducts] = useState<StoreProductPrice[]>([]);
+  const [storeId, setStoreId] = useState<number | null>(
+    editingBill?.storeId ?? null,
+  );
+  const [products, setProducts] = useState<StoreProductPrice[]>(
+    () => initialProducts ?? [],
+  );
   const [productsLoading, setProductsLoading] = useState(false);
-  const [items, setItems] = useState<FormItem[]>(() => [createFormItem()]);
-  const [customerName, setCustomerName] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
-  const [discount, setDiscount] = useState("");
-  const [shippingFee, setShippingFee] = useState("");
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [slipPreviewUrl, setSlipPreviewUrl] = useState<string | null>(null);
+  const [items, setItems] = useState<FormItem[]>(() =>
+    editingBill
+      ? editingBill.items.map((it) => ({
+          key: `i${itemKeySeq++}`,
+          productId: it.productId,
+          kilogram: String(it.kilogram),
+        }))
+      : [createFormItem()],
+  );
+  const [customerName, setCustomerName] = useState(
+    editingBill?.customerName ?? "",
+  );
+  const [customerAddress, setCustomerAddress] = useState(
+    editingBill?.customerAddress ?? "",
+  );
+  const [discount, setDiscount] = useState(
+    editingBill?.discount ? String(editingBill.discount) : "",
+  );
+  const [shippingFee, setShippingFee] = useState(
+    editingBill?.shippingFee ? String(editingBill.shippingFee) : "",
+  );
+  const [slipState, setSlipState] = useState<SlipState>(() =>
+    editingBill?.slip
+      ? { kind: "existing", key: editingBill.slip }
+      : { kind: "none" },
+  );
   const [errors, setErrors] = useState<FormErrors>(emptyErrors());
   const [submitting, setSubmitting] = useState(false);
 
@@ -69,9 +120,9 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
   // directly in its event handler instead of an effect.
   useEffect(() => {
     return () => {
-      if (slipPreviewUrl) URL.revokeObjectURL(slipPreviewUrl);
+      if (slipState.kind === "new") URL.revokeObjectURL(slipState.previewUrl);
     };
-  }, [slipPreviewUrl]);
+  }, [slipState]);
 
   async function handleStoreChange(value: string) {
     const nextStoreId = value ? Number(value) : null;
@@ -91,24 +142,26 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
   }
 
   function handleSlipChange(file: File | null) {
-    setSlipFile(file);
-    setSlipPreviewUrl(file ? URL.createObjectURL(file) : null);
+    if (!file) {
+      setSlipState({ kind: "none" });
+      return;
+    }
+    setSlipState({ kind: "new", file, previewUrl: URL.createObjectURL(file) });
   }
 
   function clearSlip() {
-    setSlipFile(null);
-    setSlipPreviewUrl(null);
+    setSlipState({ kind: "none" });
   }
 
   function updateItemProduct(key: string, productId: number | null) {
     setItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, productId } : it))
+      prev.map((it) => (it.key === key ? { ...it, productId } : it)),
     );
   }
   function updateItemKilogram(key: string, raw: string) {
     const kilogram = sanitizeNumberInput(raw);
     setItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, kilogram } : it))
+      prev.map((it) => (it.key === key ? { ...it, kilogram } : it)),
     );
   }
   function addItem() {
@@ -156,6 +209,11 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
     return next;
   }
 
+  function handleCancel() {
+    if (editingBill) router.push(`/bills/${editingBill.id}`);
+    else resetForm();
+  }
+
   async function handleSubmit() {
     const nextErrors = validate();
     setErrors(nextErrors);
@@ -164,22 +222,33 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
       return;
     }
 
+    const baseInput = {
+      storeId: storeId!,
+      customerName: customerName.trim(),
+      customerAddress: customerAddress.trim(),
+      items: items.map((it) => ({
+        productId: it.productId!,
+        kilogram: parseFloat(it.kilogram),
+      })),
+      discount: discountNum,
+      shippingFee: shippingNum,
+      slip: slipState.kind === "new" ? slipState.file : null,
+    };
+
     setSubmitting(true);
     try {
-      const bill = await createBill({
-        storeId: storeId!,
-        customerName: customerName.trim(),
-        customerAddress: customerAddress.trim(),
-        items: items.map((it) => ({
-          productId: it.productId!,
-          kilogram: parseFloat(it.kilogram),
-        })),
-        discount: discountNum,
-        shippingFee: shippingNum,
-        slip: slipFile,
-      });
-      showToast(`บันทึกบิล ${bill.receiptNo} แล้ว`);
-      router.push(`/bills/${bill.id}`);
+      if (editingBill) {
+        const bill = await updateBill(editingBill.id, {
+          ...baseInput,
+          removeSlip: slipState.kind === "none" && !!editingBill.slip,
+        });
+        showToast("แก้ไขบิลเรียบร้อย");
+        router.push(`/bills/${bill.id}`);
+      } else {
+        const bill = await createBill(baseInput);
+        showToast(`บันทึกบิล ${bill.receiptNo} แล้ว`);
+        router.push(`/bills/${bill.id}`);
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : "บันทึกบิลไม่สำเร็จ");
     } finally {
@@ -191,10 +260,10 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
     <div className="flex flex-1 flex-col pb-28">
       <div className="border-b-2 border-divider px-5 pt-[26px] pb-4">
         <div className="text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          สร้างบิลใหม่
+          {isEditing ? "แก้ไขบิล" : "สร้างบิลใหม่"}
         </div>
         <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          ออกบิลใหม่
+          {isEditing ? "แก้ไขบิล" : "ออกบิลใหม่"}
         </h1>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink/55">
           เลขเล่ม เลขที่ใบเสร็จ และราคาต่อกิโล ระบบดึงและคำนวณให้เอง
@@ -281,7 +350,7 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
                         onChange={(e) =>
                           updateItemProduct(
                             it.key,
-                            e.target.value ? Number(e.target.value) : null
+                            e.target.value ? Number(e.target.value) : null,
                           )
                         }
                         className="h-12 w-full cursor-pointer appearance-none border-0 bg-transparent px-[13px] pr-10 text-[13.5px] font-semibold outline-none"
@@ -419,19 +488,21 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
             สลิปโอนเงิน
           </label>
-          {slipFile ? (
+          {slipState.kind !== "none" ? (
             <div className="flex items-stretch gap-3 border border-divider bg-bg p-2.5">
               <div
                 className="h-[74px] w-[74px] flex-none border border-ink/15 bg-cover bg-center"
-                style={
-                  slipPreviewUrl
-                    ? { backgroundImage: `url("${slipPreviewUrl}")` }
-                    : undefined
-                }
+                style={{
+                  backgroundImage: `url("${
+                    slipState.kind === "new"
+                      ? slipState.previewUrl
+                      : slipUrl(slipState.key)
+                  }")`,
+                }}
               />
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
                 <div className="truncate text-[12.5px] leading-[1.35] font-semibold">
-                  {slipFile.name}
+                  {slipState.kind === "new" ? slipState.file.name : "สลิปเดิม"}
                 </div>
                 <button
                   type="button"
@@ -508,11 +579,11 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
       <div className="flex gap-2.5 px-5 py-3.5">
         <button
           type="button"
-          onClick={resetForm}
+          onClick={handleCancel}
           disabled={submitting}
           className="min-h-[52px] border border-divider bg-transparent px-[18px] text-[14px] font-semibold disabled:opacity-60"
         >
-          ล้าง
+          {isEditing ? "ยกเลิก" : "ล้าง"}
         </button>
         <button
           type="button"
@@ -520,7 +591,11 @@ export default function CreateBillView({ stores }: { stores: Store[] }) {
           disabled={submitting}
           className="flex min-h-[52px] flex-1 items-center justify-center gap-2 bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-60"
         >
-          {submitting ? "กำลังบันทึก…" : "บันทึกบิล"}
+          {submitting
+            ? "กำลังบันทึก…"
+            : isEditing
+              ? "บันทึกการแก้ไข"
+              : "บันทึกบิล"}
           <Check size={17} className="ml-auto" />
         </button>
       </div>

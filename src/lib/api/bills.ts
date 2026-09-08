@@ -79,3 +79,30 @@ export async function createBill(input: CreateBillInput): Promise<Bill> {
   }
   return res.json();
 }
+
+export interface UpdateBillInput extends CreateBillInput {
+  // Clears the existing slip when true and no new `slip` file is given.
+  removeSlip: boolean;
+}
+
+export async function updateBill(id: number, input: UpdateBillInput): Promise<Bill> {
+  const form = new FormData();
+  form.set("storeId", String(input.storeId));
+  form.set("customerName", input.customerName);
+  form.set("customerAddress", input.customerAddress);
+  form.set("items", JSON.stringify(input.items));
+  if (input.discount) form.set("discount", String(input.discount));
+  if (input.shippingFee) form.set("shippingFee", String(input.shippingFee));
+  if (input.slip) form.set("slip", input.slip);
+  else if (input.removeSlip) form.set("removeSlip", "true");
+
+  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+    method: "PUT",
+    body: form,
+  });
+  if (!res.ok) {
+    const body: { message?: string } | null = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `PUT /bills/${id} failed with status ${res.status}`);
+  }
+  return res.json();
+}
