@@ -3,13 +3,19 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Check,
+  CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
+  FileText,
   ListFilter,
+  Receipt,
   Search,
 } from "lucide-react";
 import { formatBaht, formatDateShort, formatKg } from "@/lib/format";
+import { useToast } from "@/components/toast-provider";
 import type { BillListItem } from "@/lib/types";
 
 const PAGE_SIZE = 8;
@@ -45,11 +51,12 @@ function periodLabelOf(key: string, mode: FilterMode): string {
   }
   return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString(
     "th-TH",
-    { day: "numeric", month: "short" }
+    { day: "numeric", month: "short" },
   );
 }
 
 export default function BillListView({ bills }: { bills: BillListItem[] }) {
+  const { showToast } = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState<SearchBy>("customer_name");
@@ -57,6 +64,13 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
+
+  // Selection mode (ADDENDUM-export.md §1) — `selected` is keyed by bill id
+  // and deliberately untouched by page/search/filter changes, so a
+  // selection made under one filter survives switching to another.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Record<number, true>>({});
+  const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
   const periodsForMode = useMemo(() => {
     if (filterMode === "all") return [];
@@ -79,7 +93,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     let rows = bills;
     if (filterMode !== "all" && activePeriodKey) {
       rows = rows.filter(
-        (b) => periodKeyOf(b.createdAt, filterMode) === activePeriodKey
+        (b) => periodKeyOf(b.createdAt, filterMode) === activePeriodKey,
       );
     }
     const q = search.trim().toLowerCase();
@@ -87,7 +101,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
       rows = rows.filter((b) =>
         (searchBy === "customer_name" ? b.customerName : b.customerAddress)
           .toLowerCase()
-          .includes(q)
+          .includes(q),
       );
     }
     return rows;
@@ -97,7 +111,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const currentPage = Math.min(page, totalPages);
   const slice = filtered.slice(
     (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    currentPage * PAGE_SIZE,
   );
   const sumTotal = filtered.reduce((a, b) => a + b.total, 0);
   const sumKgAll = filtered.reduce((a, b) => a + b.totalKilogram, 0);
@@ -127,6 +141,54 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     setPage(1);
   }
 
+  const selectedBills = bills.filter((b) => selected[b.id]);
+  const selectedCount = selectedBills.length;
+  const selectedTotal = selectedBills.reduce((a, b) => a + b.total, 0);
+  const selectedKg = selectedBills.reduce((a, b) => a + b.totalKilogram, 0);
+
+  const pageIds = slice.map((b) => b.id);
+  const allPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selected[id]);
+
+  function toggleSelectAllPage() {
+    if (allPageSelected) {
+      // "ล้างที่เลือก" at this point clears the whole selection, not just
+      // the current page — see ADDENDUM-export.md §1.
+      setSelected({});
+      return;
+    }
+    setSelected((prev) => {
+      const next = { ...prev };
+      pageIds.forEach((id) => {
+        next[id] = true;
+      });
+      return next;
+    });
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelected({});
+    setExportSheetOpen(false);
+  }
+
+  function toggleSelected(id: number) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  }
+
+  // Document generation itself (ADDENDUM-export.md §2-4) isn't built yet —
+  // this just closes the sheet, matching the stub pattern used elsewhere
+  // (print receipt, edit-before-/bills/[id]/edit existed, etc).
+  function handlePickDoc() {
+    showToast("ฟีเจอร์ export เอกสารอยู่ระหว่างพัฒนา");
+    setExportSheetOpen(false);
+  }
+
   return (
     <div className="flex flex-1 flex-col pb-24">
       {/* Header */}
@@ -140,16 +202,73 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
               บิลทั้งหมด
             </h1>
           </div>
-          <div className="border-l-2 border-divider pl-3 text-right">
-            <div className="font-num text-[22px] leading-none font-bold text-accent">
-              {filtered.length.toLocaleString("en-US")}
+          <div className="flex items-start gap-3">
+            <div className="border-l-2 border-divider pl-3 text-right">
+              <div className="font-num text-[22px] leading-none font-bold text-accent">
+                {filtered.length.toLocaleString("en-US")}
+              </div>
+              <div className="mt-1 text-[10px] leading-[1.3] font-medium text-ink/55">
+                รายการ
+              </div>
             </div>
-            <div className="mt-1 text-[10px] leading-[1.3] font-medium text-ink/55">
-              รายการ
-            </div>
+            <button
+              type="button"
+              onClick={toggleSelectMode}
+              aria-label="เลือกบิล"
+              className={`flex h-11 w-11 flex-none items-center justify-center border ${
+                selectMode
+                  ? "border-accent bg-accent text-white"
+                  : "border-divider bg-transparent text-ink/60"
+              }`}
+            >
+              <CheckSquare size={18} />
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Selection bar */}
+      {selectMode && (
+        <div className="border-b-2 border-divider bg-accent px-5 py-3.5 text-white [animation:riseIn_0.18s_ease_both]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-bold">
+                {selectedCount > 0
+                  ? `เลือกไว้ ${selectedCount} บิล`
+                  : "ยังไม่ได้เลือกบิล"}
+              </div>
+              <div className="font-num mt-1 text-[11px] opacity-90">
+                {selectedCount > 0
+                  ? `${formatBaht(selectedTotal)} · ${formatKg(selectedKg)}`
+                  : "แตะเพื่อเลือก"}
+              </div>
+            </div>
+            <div className="flex flex-none items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectAllPage}
+                className="h-10 border border-white/60 bg-transparent px-3 text-[12px] font-semibold whitespace-nowrap text-white"
+              >
+                {allPageSelected ? "ล้างที่เลือก" : "เลือกทั้งหน้า"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportSheetOpen(true)}
+                disabled={selectedCount === 0}
+                className="flex h-10 items-center gap-1.5 bg-white px-3 text-[12.5px] font-bold text-accent disabled:opacity-45"
+              >
+                <Download size={14} />
+                Export
+              </button>
+            </div>
+          </div>
+          {selectedCount === 0 && (
+            <div className="mt-2 text-[11px] opacity-90">
+              แตะบิลที่ต้องการ แล้วกด Export เพื่อออกเอกสาร
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="grid grid-cols-3 border-b-2 border-divider bg-surface">
@@ -343,41 +462,81 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
       {/* Rows */}
       {slice.length > 0 ? (
         <div className="flex flex-col">
-          {slice.map((bill) => (
-            <Link
-              key={bill.id}
-              href={`/bills/${bill.id}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-3.5 border-b border-divider-light bg-surface px-5 py-[15px] text-ink hover:bg-accent-100 active:bg-accent-200"
-            >
-              <div className="min-w-0">
+          {slice.map((bill) => {
+            const isSelected = !!selected[bill.id];
+            const rowClassName = `grid items-center gap-3.5 border-b border-divider-light px-5 py-[15px] text-left text-ink ${
+              selectMode ? "grid-cols-[22px_1fr_auto]" : "grid-cols-[1fr_auto]"
+            } ${
+              isSelected
+                ? "bg-accent-100"
+                : "bg-surface hover:bg-accent-100 active:bg-accent-200"
+            }`;
+            const content = (
+              <>
+                {selectMode && (
+                  <div
+                    className={`flex h-[22px] w-[22px] flex-none items-center justify-center border-2 ${
+                      isSelected
+                        ? "border-accent bg-accent"
+                        : "border-ink/40 bg-transparent"
+                    }`}
+                  >
+                    {isSelected && (
+                      <Check size={14} strokeWidth={3} className="text-white" />
+                    )}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-num bg-accent-100 px-[6px] py-1 text-[10px] font-semibold tracking-[.06em] text-accent">
+                      #{bill.receiptNo}
+                    </span>
+                    <span className="text-[10px] font-medium text-ink/45">
+                      {formatDateShort(bill.createdAt)}
+                    </span>
+                  </div>
+                  <div className="mt-2 truncate text-[16px] font-semibold">
+                    {bill.customerName}
+                  </div>
+                  <div className="mt-0.5 truncate text-[12px] text-ink/55">
+                    {bill.customerAddress}
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-num bg-accent-100 px-[6px] py-1 text-[10px] font-semibold tracking-[.06em] text-accent">
-                    #{bill.receiptNo}
-                  </span>
-                  <span className="text-[10px] font-medium text-ink/45">
-                    {formatDateShort(bill.createdAt)}
-                  </span>
-                </div>
-                <div className="mt-2 truncate text-[16px] font-semibold">
-                  {bill.customerName}
-                </div>
-                <div className="mt-0.5 truncate text-[12px] text-ink/55">
-                  {bill.customerAddress}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="text-right">
-                  <div className="font-num text-[16px] leading-[1.1] font-bold">
-                    {formatBaht(bill.total)}
+                  <div className="text-right">
+                    <div className="font-num text-[16px] leading-[1.1] font-bold">
+                      {formatBaht(bill.total)}
+                    </div>
+                    <div className="font-num mt-[5px] text-[10px] leading-[1.1] text-ink/45">
+                      {formatKg(bill.totalKilogram)} · {bill.itemCount} รายการ
+                    </div>
                   </div>
-                  <div className="font-num mt-[5px] text-[10px] leading-[1.1] text-ink/45">
-                    {formatKg(bill.totalKilogram)} · {bill.itemCount} รายการ
-                  </div>
+                  {!selectMode && (
+                    <ChevronRight size={16} className="text-ink/35" />
+                  )}
                 </div>
-                <ChevronRight size={16} className="text-ink/35" />
-              </div>
-            </Link>
-          ))}
+              </>
+            );
+
+            return selectMode ? (
+              <button
+                key={bill.id}
+                type="button"
+                onClick={() => toggleSelected(bill.id)}
+                className={`w-full ${rowClassName}`}
+              >
+                {content}
+              </button>
+            ) : (
+              <Link
+                key={bill.id}
+                href={`/bills/${bill.id}`}
+                className={rowClassName}
+              >
+                {content}
+              </Link>
+            );
+          })}
         </div>
       ) : (
         <div className="border-b-2 border-divider bg-surface px-5 py-[60px]">
@@ -417,6 +576,71 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
           </button>
         </div>
       </div>
+
+      {/* Export bottom sheet */}
+      {exportSheetOpen && (
+        <div
+          onClick={() => setExportSheetOpen(false)}
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+          >
+            <div className="text-[10px] font-semibold tracking-[.18em] text-accent uppercase">
+              EXPORT · A4 แนวตั้ง
+            </div>
+            <h3 className="mt-2 text-[20px] leading-[1.3] font-bold">
+              เลือกรูปแบบเอกสาร
+            </h3>
+            <p className="mt-1.5 text-[12.5px] text-ink/55">
+              เลือกไว้ {selectedCount} บิล · {formatBaht(selectedTotal)}
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => handlePickDoc()}
+                className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
+              >
+                <FileText size={20} className="flex-none text-accent" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14px] font-semibold">
+                    เอกสารสรุปสินค้า
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
+                    ตารางรวมทุกบิลที่เลือก +
+                    สรุปน้ำหนักต่อสินค้าและยอดรวมท้ายตาราง
+                  </div>
+                </div>
+                <ChevronRight size={16} className="flex-none text-ink/35" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePickDoc()}
+                className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
+              >
+                <Receipt size={20} className="flex-none text-accent" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14px] font-semibold">
+                    ใบเสร็จรับเงิน
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
+                    หนึ่งใบต่อหนึ่งบิล · ครึ่งบนข้อมูลบิล ครึ่งล่างสลิปโอนเงิน
+                  </div>
+                </div>
+                <ChevronRight size={16} className="flex-none text-ink/35" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExportSheetOpen(false)}
+              className="mt-4 min-h-[50px] w-full border border-divider bg-transparent text-[14px] font-semibold"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
