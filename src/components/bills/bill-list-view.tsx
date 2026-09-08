@@ -16,7 +16,6 @@ import {
   Search,
 } from "lucide-react";
 import { formatBaht, formatDateShort, formatKg } from "@/lib/format";
-import { useToast } from "@/components/toast-provider";
 import type { BillListItem } from "@/lib/types";
 
 const PAGE_SIZE = 8;
@@ -58,7 +57,6 @@ function periodLabelOf(key: string, mode: FilterMode): string {
 
 export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const router = useRouter();
-  const { showToast } = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState<SearchBy>("customer_name");
@@ -189,12 +187,10 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     router.push(`/bills/export/summary?ids=${ids}`);
   }
 
-  // ใบเสร็จรับเงิน (ADDENDUM-export.md §4) isn't built yet — this just closes
-  // the sheet, matching the stub pattern used elsewhere (print receipt,
-  // edit-before-/bills/[id]/edit existed, etc).
   function handlePickReceiptDoc() {
-    showToast("ฟีเจอร์ export ใบเสร็จรับเงินอยู่ระหว่างพัฒนา");
+    const ids = selectedBills.map((b) => b.id).join(",");
     setExportSheetOpen(false);
+    router.push(`/bills/export/receipt?ids=${ids}`);
   }
 
   return (

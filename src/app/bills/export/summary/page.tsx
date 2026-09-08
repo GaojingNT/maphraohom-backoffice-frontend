@@ -1,5 +1,6 @@
 import PrintToolbar from "@/components/export/print-toolbar";
 import { getBill } from "@/lib/api/bills";
+import { parseIds } from "@/lib/export/parse-ids";
 import {
   formatBaht,
   formatDateFull,
@@ -8,14 +9,6 @@ import {
   sumKg,
 } from "@/lib/format";
 import type { Bill } from "@/lib/types";
-
-function parseIds(raw: string | string[] | undefined): number[] {
-  const value = Array.isArray(raw) ? raw.join(",") : (raw ?? "");
-  return value
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0);
-}
 
 export default async function ExportSummaryPage({
   searchParams,

@@ -12,17 +12,10 @@ import {
   X,
 } from "lucide-react";
 import { deleteBill } from "@/lib/api/bills";
-import { API_BASE_URL } from "@/lib/api/config";
 import { formatBaht, formatDateFull, formatKg, sumKg } from "@/lib/format";
+import { slipUrl } from "@/lib/slip-url";
 import { useToast } from "@/components/toast-provider";
 import type { Bill } from "@/lib/types";
-
-// The backend doesn't yet serve uploaded slip files over HTTP (only
-// stores/reads them server-side) — this URL is a best guess at the future
-// static-serving convention and will 404/broken-image until that exists.
-function slipUrl(slipKey: string): string {
-  return `${API_BASE_URL.replace(/\/api\/v1$/, "")}/storage/${slipKey}`;
-}
 
 export default function BillDetailView({ bill }: { bill: Bill }) {
   const router = useRouter();

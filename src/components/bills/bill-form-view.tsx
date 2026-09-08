@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { createBill, updateBill } from "@/lib/api/bills";
 import { getStoreProducts } from "@/lib/api/stores";
-import { API_BASE_URL } from "@/lib/api/config";
 import { formatBaht, formatKg } from "@/lib/format";
+import { slipUrl } from "@/lib/slip-url";
 import { useToast } from "@/components/toast-provider";
 import type { Bill, Store, StoreProductPrice } from "@/lib/types";
 
@@ -35,12 +35,6 @@ type SlipState =
   | { kind: "none" }
   | { kind: "existing"; key: string }
   | { kind: "new"; file: File; previewUrl: string };
-
-// Same caveat as the bill detail page: no static-serving route exists yet
-// for uploaded slips, so this degrades to a broken image until that exists.
-function slipUrl(slipKey: string): string {
-  return `${API_BASE_URL.replace(/\/api\/v1$/, "")}/storage/${slipKey}`;
-}
 
 function sanitizeNumberInput(raw: string): string {
   return raw.replace(/[^0-9.]/g, "");
