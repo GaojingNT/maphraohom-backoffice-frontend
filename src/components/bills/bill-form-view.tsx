@@ -11,6 +11,11 @@ import {
   Upload,
 } from "lucide-react";
 import { createBill, updateBill } from "@/lib/api/bills";
+import {
+  getCustomerAddresses,
+  searchCustomers,
+  type CustomerListItem,
+} from "@/lib/api/customers";
 import { getStoreProducts } from "@/lib/api/stores";
 import { formatBaht, formatKg } from "@/lib/format";
 import { slipUrl } from "@/lib/slip-url";
@@ -108,6 +113,34 @@ export default function BillFormView({
   const [errors, setErrors] = useState<FormErrors>(emptyErrors());
   const [submitting, setSubmitting] = useState(false);
 
+  const [customerSuggestions, setCustomerSuggestions] = useState<
+    CustomerListItem[]
+  >([]);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+
+  // Debounced customer-name search. The `if (...) return;` guards below
+  // never call setState directly — only the resolved fetch callback does —
+  // so this stays compliant with react-hooks/set-state-in-effect while
+  // still reacting to customerName changes as the user types.
+  useEffect(() => {
+    const query = customerName.trim();
+    if (!query || !showCustomerSuggestions) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchCustomers(query)
+        .then((data) => {
+          if (!cancelled) setCustomerSuggestions(data);
+        })
+        .catch(() => {
+          if (!cancelled) setCustomerSuggestions([]);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [customerName, showCustomerSuggestions]);
+
   // Revoke the slip preview URL whenever it's replaced or the form unmounts.
   // This effect only touches the external object-URL registry — it never
   // calls setState — so the fetch-on-select-change below is handled
@@ -132,6 +165,23 @@ export default function BillFormView({
       setProducts([]);
     } finally {
       setProductsLoading(false);
+    }
+  }
+
+  function handleCustomerNameChange(value: string) {
+    setCustomerName(value);
+    setShowCustomerSuggestions(!!value.trim());
+  }
+
+  async function handleSelectCustomer(customer: CustomerListItem) {
+    setCustomerName(customer.name);
+    setShowCustomerSuggestions(false);
+    setCustomerSuggestions([]);
+    try {
+      const addresses = await getCustomerAddresses(customer.id);
+      if (addresses.length > 0) setCustomerAddress(addresses[0].address);
+    } catch {
+      // Address stays editable manually either way.
     }
   }
 
@@ -171,6 +221,8 @@ export default function BillFormView({
     setItems([createFormItem()]);
     setCustomerName("");
     setCustomerAddress("");
+    setShowCustomerSuggestions(false);
+    setCustomerSuggestions([]);
     setDiscount("");
     setShippingFee("");
     clearSlip();
@@ -411,16 +463,36 @@ export default function BillFormView({
         </div>
 
         {/* 3. Customer name */}
-        <div>
+        <div className="relative">
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
             3 · ชื่อลูกค้า <span className="text-accent">*</span>
           </label>
           <input
             value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
+            onChange={(e) => handleCustomerNameChange(e.target.value)}
+            onFocus={() => setShowCustomerSuggestions(!!customerName.trim())}
+            onBlur={() => setShowCustomerSuggestions(false)}
             placeholder="เช่น ร้านขนมป้ามาลี"
+            autoComplete="off"
             className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
           />
+          {showCustomerSuggestions && customerSuggestions.length > 0 && (
+            <div className="absolute inset-x-0 top-full z-10 mt-1 border border-divider bg-surface shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
+              {customerSuggestions.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelectCustomer(c);
+                  }}
+                  className="block w-full border-b border-ink/12 px-[13px] py-2.5 text-left text-[13.5px] font-semibold last:border-b-0 hover:bg-accent-100"
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
           {errors.customerName && (
             <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
               {errors.customerName}
