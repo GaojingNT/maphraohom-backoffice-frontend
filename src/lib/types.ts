@@ -27,6 +27,8 @@ export interface BillItem {
 // responses.BillListItem in the backend.
 export interface BillListItem {
   id: number;
+  storeId: number;
+  storeName: string;
   receiptNo: number;
   customerName: string;
   customerAddress: string;
@@ -42,7 +44,7 @@ export interface Bill {
   storeId: number;
   storeName: string;
   storeLogo?: string;
-  customerId: number;
+  customerId?: number;
   bookNo: number;
   receiptNo: number;
   customerName: string;
@@ -50,7 +52,7 @@ export interface Bill {
   discount: number;
   shippingFee: number;
   total: number;
-  slip: string | null;
+  slip: string;
   createdAt: string;
   updatedAt: string;
   items: BillItem[];

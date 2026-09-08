@@ -22,6 +22,28 @@ export async function getBills(): Promise<BillListItem[]> {
   return page.data;
 }
 
+export async function getBill(id: number): Promise<Bill> {
+  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`GET /bills/${id} failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteBill(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body: { message?: string } | null = await res.json().catch(() => null);
+    throw new Error(
+      body?.message ?? `DELETE /bills/${id} failed with status ${res.status}`
+    );
+  }
+}
+
 export interface CreateBillItemInput {
   productId: number;
   kilogram: number;
