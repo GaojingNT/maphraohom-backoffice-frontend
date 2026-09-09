@@ -49,6 +49,7 @@ export interface Bill {
   receiptNo: number;
   customerName: string;
   customerAddress: string;
+  customerPhone: string;
   discount: number;
   shippingFee: number;
   total: number;

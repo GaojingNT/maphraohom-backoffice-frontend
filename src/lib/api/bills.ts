@@ -53,6 +53,7 @@ export interface CreateBillInput {
   storeId: number;
   customerName: string;
   customerAddress: string;
+  customerPhone: string;
   items: CreateBillItemInput[];
   discount: number;
   shippingFee: number;
@@ -64,6 +65,7 @@ export async function createBill(input: CreateBillInput): Promise<Bill> {
   form.set("storeId", String(input.storeId));
   form.set("customerName", input.customerName);
   form.set("customerAddress", input.customerAddress);
+  if (input.customerPhone) form.set("customerPhone", input.customerPhone);
   form.set("items", JSON.stringify(input.items));
   if (input.discount) form.set("discount", String(input.discount));
   if (input.shippingFee) form.set("shippingFee", String(input.shippingFee));
@@ -90,6 +92,7 @@ export async function updateBill(id: number, input: UpdateBillInput): Promise<Bi
   form.set("storeId", String(input.storeId));
   form.set("customerName", input.customerName);
   form.set("customerAddress", input.customerAddress);
+  if (input.customerPhone) form.set("customerPhone", input.customerPhone);
   form.set("items", JSON.stringify(input.items));
   if (input.discount) form.set("discount", String(input.discount));
   if (input.shippingFee) form.set("shippingFee", String(input.shippingFee));

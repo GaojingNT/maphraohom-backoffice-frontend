@@ -13,6 +13,12 @@ export interface CustomerAddressItem {
   isDefault: boolean;
 }
 
+export interface CustomerPhoneItem {
+  id: number;
+  phone: string;
+  isDefault: boolean;
+}
+
 interface CustomersPageResponse {
   data: CustomerListItem[];
 }
@@ -45,6 +51,21 @@ export async function getCustomerAddresses(
   if (!res.ok) {
     throw new Error(
       `GET /customers/${id}/addresses failed with status ${res.status}`,
+    );
+  }
+  return res.json();
+}
+
+// Ordered default-first by the backend, so [0] is the phone to prefill.
+export async function getCustomerPhones(
+  id: number,
+): Promise<CustomerPhoneItem[]> {
+  const res = await fetch(`${API_BASE_URL}/customers/${id}/phones`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `GET /customers/${id}/phones failed with status ${res.status}`,
     );
   }
   return res.json();

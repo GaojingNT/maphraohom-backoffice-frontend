@@ -48,6 +48,7 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
       label: "รหัสลูกค้า",
       value: bill.customerId != null ? `C${bill.customerId}` : "—",
     },
+    { label: "เบอร์โทรศัพท์", value: bill.customerPhone || "—" },
     { label: "น้ำหนักรวม", value: formatKg(weightTotal) },
     { label: "ยอดรวมสินค้า", value: formatBaht(itemsSubtotal) },
     {

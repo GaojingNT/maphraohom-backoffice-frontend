@@ -13,6 +13,7 @@ import {
 import { createBill, updateBill } from "@/lib/api/bills";
 import {
   getCustomerAddresses,
+  getCustomerPhones,
   searchCustomers,
   type CustomerListItem,
 } from "@/lib/api/customers";
@@ -99,6 +100,9 @@ export default function BillFormView({
   const [customerAddress, setCustomerAddress] = useState(
     editingBill?.customerAddress ?? "",
   );
+  const [customerPhone, setCustomerPhone] = useState(
+    editingBill?.customerPhone ?? "",
+  );
   const [discount, setDiscount] = useState(
     editingBill?.discount ? String(editingBill.discount) : "",
   );
@@ -178,10 +182,14 @@ export default function BillFormView({
     setShowCustomerSuggestions(false);
     setCustomerSuggestions([]);
     try {
-      const addresses = await getCustomerAddresses(customer.id);
+      const [addresses, phones] = await Promise.all([
+        getCustomerAddresses(customer.id),
+        getCustomerPhones(customer.id),
+      ]);
       if (addresses.length > 0) setCustomerAddress(addresses[0].address);
+      if (phones.length > 0) setCustomerPhone(phones[0].phone);
     } catch {
-      // Address stays editable manually either way.
+      // Address/phone stay editable manually either way.
     }
   }
 
@@ -221,6 +229,7 @@ export default function BillFormView({
     setItems([createFormItem()]);
     setCustomerName("");
     setCustomerAddress("");
+    setCustomerPhone("");
     setShowCustomerSuggestions(false);
     setCustomerSuggestions([]);
     setDiscount("");
@@ -272,6 +281,7 @@ export default function BillFormView({
       storeId: storeId!,
       customerName: customerName.trim(),
       customerAddress: customerAddress.trim(),
+      customerPhone: customerPhone.trim(),
       items: items.map((it) => ({
         productId: it.productId!,
         kilogram: parseFloat(it.kilogram),
@@ -517,6 +527,21 @@ export default function BillFormView({
               {errors.customerAddress}
             </div>
           )}
+        </div>
+
+        {/* 5. Phone */}
+        <div>
+          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
+            5 · เบอร์โทรศัพท์
+          </label>
+          <input
+            value={customerPhone}
+            onChange={(e) => setCustomerPhone(e.target.value)}
+            inputMode="tel"
+            placeholder="เช่น 0812345678"
+            autoComplete="off"
+            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
+          />
         </div>
 
         {/* Discount / shipping */}
