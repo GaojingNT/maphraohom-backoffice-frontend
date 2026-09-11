@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronLeft, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, Pencil, Plus, Trash2, X } from "lucide-react";
 import type { ProductListItem } from "@/lib/api/products";
 import {
   createPromotion,
+  deletePromotion,
+  getPromotion,
   getPromotions,
+  updatePromotion,
+  type PromotionDetail,
   type PromotionListItem,
 } from "@/lib/api/promotions";
 import { useToast } from "@/components/toast-provider";
@@ -22,6 +26,13 @@ function formatRange(startsAt: string, endsAt: string): string {
   return `${fmt(startsAt)} – ${fmt(endsAt)}`;
 }
 
+// "YYYY-MM-DD HH:mm:ss" (backend) -> "YYYY-MM-DDTHH:mm" (datetime-local input)
+function toDatetimeLocalValue(s: string): string {
+  return s.replace(" ", "T").slice(0, 16);
+}
+
+type SheetState = { mode: "create" } | { mode: "edit"; promotion: PromotionDetail };
+
 export default function PromotionAdminView({
   stores,
   products,
@@ -33,7 +44,11 @@ export default function PromotionAdminView({
   const [storeId, setStoreId] = useState<number | null>(null);
   const [promotions, setPromotions] = useState<PromotionListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
+  const [sheet, setSheet] = useState<SheetState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PromotionListItem | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
 
   async function reload(id: number) {
     setLoading(true);
@@ -51,6 +66,30 @@ export default function PromotionAdminView({
     setStoreId(nextStoreId);
     setPromotions([]);
     if (nextStoreId != null) reload(nextStoreId);
+  }
+
+  async function handleEditClick(id: number) {
+    try {
+      const promotion = await getPromotion(id);
+      setSheet({ mode: "edit", promotion });
+    } catch {
+      showToast("โหลดรายละเอียดโปรไม่สำเร็จ");
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deletePromotion(deleteTarget.id);
+      showToast(`ลบโปร "${deleteTarget.name}" แล้ว`);
+      setDeleteTarget(null);
+      if (storeId != null) reload(storeId);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "ลบโปรไม่สำเร็จ");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -101,7 +140,7 @@ export default function PromotionAdminView({
         <button
           type="button"
           disabled={storeId == null}
-          onClick={() => setFormOpen(true)}
+          onClick={() => setSheet({ mode: "create" })}
           className="flex min-h-12 w-full items-center justify-center gap-[9px] border border-accent bg-accent-100 px-3.5 text-[13px] font-semibold text-accent hover:bg-accent-200 disabled:opacity-50"
         >
           <Plus size={16} strokeWidth={2.2} />
@@ -137,6 +176,20 @@ export default function PromotionAdminView({
                   {formatRange(p.startsAt, p.endsAt)}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => handleEditClick(p.id)}
+                className="flex h-9 w-9 flex-none items-center justify-center border border-divider bg-transparent"
+              >
+                <Pencil size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(p)}
+                className="flex h-9 w-9 flex-none items-center justify-center border border-divider bg-transparent text-danger"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
           ))}
           {promotions.length === 0 && (
@@ -147,16 +200,49 @@ export default function PromotionAdminView({
         </div>
       )}
 
-      {formOpen && storeId != null && (
-        <CreatePromotionSheet
+      {sheet && storeId != null && (
+        <PromotionSheet
           storeId={storeId}
           products={products}
-          onClose={() => setFormOpen(false)}
-          onCreated={() => {
-            setFormOpen(false);
+          editing={sheet.mode === "edit" ? sheet.promotion : undefined}
+          onClose={() => setSheet(null)}
+          onSaved={() => {
+            setSheet(null);
             reload(storeId);
           }}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]">
+          <div className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]">
+            <h3 className="text-[20px] leading-[1.3] font-bold">
+              ลบโปร &quot;{deleteTarget.name}&quot;?
+            </h3>
+            <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
+              บิลที่เคยขายช่วงโปรนี้จะยังเก็บราคาเดิมไว้
+              แต่จะไม่ผูกกับโปรนี้อีกต่อไป
+            </p>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold disabled:opacity-60"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white disabled:opacity-60"
+              >
+                {deleting ? "กำลังลบ…" : "ลบโปร"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -168,23 +254,37 @@ interface ItemRow {
   price: string;
 }
 
-function CreatePromotionSheet({
+function PromotionSheet({
   storeId,
   products,
+  editing,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   storeId: number;
   products: ProductListItem[];
+  editing?: PromotionDetail;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const { showToast } = useToast();
-  const [name, setName] = useState("");
-  const [startsAt, setStartsAt] = useState("");
-  const [endsAt, setEndsAt] = useState("");
+  const isEditing = !!editing;
+  const [name, setName] = useState(editing?.name ?? "");
+  const [startsAt, setStartsAt] = useState(
+    editing ? toDatetimeLocalValue(editing.startsAt) : "",
+  );
+  const [endsAt, setEndsAt] = useState(
+    editing ? toDatetimeLocalValue(editing.endsAt) : "",
+  );
   const [rows, setRows] = useState<ItemRow[]>(() =>
-    products.map((p) => ({ productId: p.id, checked: false, price: "" })),
+    products.map((p) => {
+      const existing = editing?.items.find((it) => it.productId === p.id);
+      return {
+        productId: p.id,
+        checked: !!existing,
+        price: existing ? String(existing.price) : "",
+      };
+    }),
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -215,23 +315,34 @@ function CreatePromotionSheet({
     if (selected.some((r) => !(parseFloat(r.price) > 0)))
       return showToast("กรอกราคาโปรของทุกสินค้าที่เลือก");
 
+    const payload = {
+      name: name.trim(),
+      storeId,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      items: selected.map((r) => ({
+        productId: r.productId,
+        price: parseFloat(r.price),
+      })),
+    };
+
     setSubmitting(true);
     try {
-      await createPromotion({
-        name: name.trim(),
-        storeId,
-        startsAt: new Date(startsAt).toISOString(),
-        endsAt: new Date(endsAt).toISOString(),
-        items: selected.map((r) => ({
-          productId: r.productId,
-          price: parseFloat(r.price),
-        })),
-      });
-      showToast("สร้างโปรโมชั่นแล้ว");
-      onCreated();
+      if (editing) {
+        await updatePromotion(editing.id, payload);
+        showToast("บันทึกการแก้ไขแล้ว");
+      } else {
+        await createPromotion(payload);
+        showToast("สร้างโปรโมชั่นแล้ว");
+      }
+      onSaved();
     } catch (err) {
       showToast(
-        err instanceof Error ? err.message : "สร้างโปรโมชั่นไม่สำเร็จ",
+        err instanceof Error
+          ? err.message
+          : isEditing
+            ? "บันทึกการแก้ไขไม่สำเร็จ"
+            : "สร้างโปรโมชั่นไม่สำเร็จ",
       );
     } finally {
       setSubmitting(false);
@@ -242,7 +353,9 @@ function CreatePromotionSheet({
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]">
       <div className="flex max-h-[88vh] w-full max-w-[430px] flex-col border-t-2 border-divider bg-surface [animation:riseIn_0.2s_ease_both]">
         <div className="flex items-center justify-between border-b-2 border-divider px-5 py-4">
-          <h3 className="text-[17px] font-bold">สร้างโปรโมชั่นใหม่</h3>
+          <h3 className="text-[17px] font-bold">
+            {isEditing ? "แก้ไขโปรโมชั่น" : "สร้างโปรโมชั่นใหม่"}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -340,7 +453,11 @@ function CreatePromotionSheet({
             disabled={submitting}
             className="min-h-[50px] flex-1 bg-accent text-[14px] font-semibold text-white disabled:opacity-60"
           >
-            {submitting ? "กำลังบันทึก…" : "สร้างโปร"}
+            {submitting
+              ? "กำลังบันทึก…"
+              : isEditing
+                ? "บันทึกการแก้ไข"
+                : "สร้างโปร"}
           </button>
         </div>
       </div>

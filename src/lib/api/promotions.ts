@@ -66,3 +66,47 @@ export async function createPromotion(
   }
   return res.json();
 }
+
+export async function getPromotion(id: number): Promise<PromotionDetail> {
+  const res = await fetch(`${API_BASE_URL}/promotions/${id}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`GET /promotions/${id} failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updatePromotion(
+  id: number,
+  input: CreatePromotionInput,
+): Promise<PromotionDetail> {
+  const res = await fetch(`${API_BASE_URL}/promotions/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body: { message?: string } | null = await res
+      .json()
+      .catch(() => null);
+    throw new Error(
+      body?.message ?? `PUT /promotions/${id} failed with status ${res.status}`,
+    );
+  }
+  return res.json();
+}
+
+export async function deletePromotion(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/promotions/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body: { message?: string } | null = await res
+      .json()
+      .catch(() => null);
+    throw new Error(
+      body?.message ?? `DELETE /promotions/${id} failed with status ${res.status}`,
+    );
+  }
+}
