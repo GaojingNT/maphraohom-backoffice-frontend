@@ -26,9 +26,9 @@ function formatRange(startsAt: string, endsAt: string): string {
   return `${fmt(startsAt)} – ${fmt(endsAt)}`;
 }
 
-// "YYYY-MM-DD HH:mm:ss" (backend) -> "YYYY-MM-DDTHH:mm" (datetime-local input)
-function toDatetimeLocalValue(s: string): string {
-  return s.replace(" ", "T").slice(0, 16);
+// "YYYY-MM-DD HH:mm:ss" (backend) -> "YYYY-MM-DD" (date input)
+function toDateValue(s: string): string {
+  return s.slice(0, 10);
 }
 
 type SheetState = { mode: "create" } | { mode: "edit"; promotion: PromotionDetail };
@@ -271,10 +271,10 @@ function PromotionSheet({
   const isEditing = !!editing;
   const [name, setName] = useState(editing?.name ?? "");
   const [startsAt, setStartsAt] = useState(
-    editing ? toDatetimeLocalValue(editing.startsAt) : "",
+    editing ? toDateValue(editing.startsAt) : "",
   );
   const [endsAt, setEndsAt] = useState(
-    editing ? toDatetimeLocalValue(editing.endsAt) : "",
+    editing ? toDateValue(editing.endsAt) : "",
   );
   const [rows, setRows] = useState<ItemRow[]>(() =>
     products.map((p) => {
@@ -309,17 +309,19 @@ function PromotionSheet({
     const selected = rows.filter((r) => r.checked);
     if (!name.trim()) return showToast("กรอกชื่อโปรโมชั่น");
     if (!startsAt || !endsAt) return showToast("กรอกช่วงวันที่ให้ครบ");
-    if (new Date(endsAt) <= new Date(startsAt))
-      return showToast("วันสิ้นสุดต้องหลังวันเริ่ม");
+    if (new Date(endsAt) < new Date(startsAt))
+      return showToast("วันสิ้นสุดต้องไม่ก่อนวันเริ่ม");
     if (selected.length === 0) return showToast("เลือกสินค้าอย่างน้อย 1 รายการ");
     if (selected.some((r) => !(parseFloat(r.price) > 0)))
       return showToast("กรอกราคาโปรของทุกสินค้าที่เลือก");
 
+    // Time is locked, not user-editable: promotions always run midnight to
+    // midnight — 00:00:00 on the start date through 23:59:59 on the end date.
     const payload = {
       name: name.trim(),
       storeId,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
+      startsAt: new Date(`${startsAt}T00:00:00`).toISOString(),
+      endsAt: new Date(`${endsAt}T23:59:59`).toISOString(),
       items: selected.map((r) => ({
         productId: r.productId,
         price: parseFloat(r.price),
@@ -382,7 +384,7 @@ function PromotionSheet({
                 เริ่มโปร
               </label>
               <input
-                type="datetime-local"
+                type="date"
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
                 className="h-12 w-full border border-divider bg-bg px-[10px] text-[13.5px] outline-none"
@@ -393,13 +395,17 @@ function PromotionSheet({
                 สิ้นสุดโปร
               </label>
               <input
-                type="datetime-local"
+                type="date"
                 value={endsAt}
+                min={startsAt || undefined}
                 onChange={(e) => setEndsAt(e.target.value)}
                 className="h-12 w-full border border-divider bg-bg px-[10px] text-[13.5px] outline-none"
               />
             </div>
           </div>
+          <p className="mt-2 text-[11px] leading-[1.5] text-ink/45">
+            โปรจะเริ่มตั้งแต่ 00:00 น. ของวันเริ่ม ถึง 23:59 น. ของวันสิ้นสุด
+          </p>
 
           <label className="mt-5 mb-2 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
             สินค้าที่ร่วมโปร + ราคาพิเศษ
