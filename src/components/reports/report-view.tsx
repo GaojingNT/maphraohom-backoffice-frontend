@@ -37,7 +37,7 @@ export default function ReportView({
   const inRange = bills.filter((b) => new Date(b.createdAt).getTime() >= since);
 
   const repTotal = inRange.reduce((a, b) => a + b.total, 0);
-  const repKg = inRange.reduce((a, b) => a + b.totalKilogram, 0);
+  const repKg = inRange.reduce((a, b) => a + b.totalQuantity, 0);
   const repAvg = inRange.length ? repTotal / inRange.length : 0;
 
   const bucketCount = range === "7d" ? 7 : range === "30d" ? 6 : 12;
@@ -67,7 +67,7 @@ export default function ReportView({
         name: store.name,
         value: rows.reduce((a, b) => a + b.total, 0),
         count: rows.length,
-        kg: rows.reduce((a, b) => a + b.totalKilogram, 0),
+        kg: rows.reduce((a, b) => a + b.totalQuantity, 0),
       };
     })
     .sort((a, b) => b.value - a.value);

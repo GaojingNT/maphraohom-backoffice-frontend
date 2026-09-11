@@ -114,7 +114,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     currentPage * PAGE_SIZE,
   );
   const sumTotal = filtered.reduce((a, b) => a + b.total, 0);
-  const sumKgAll = filtered.reduce((a, b) => a + b.totalKilogram, 0);
+  const sumKgAll = filtered.reduce((a, b) => a + b.totalQuantity, 0);
 
   const filterChipLabel =
     filterMode === "all"
@@ -144,7 +144,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const selectedBills = bills.filter((b) => selected[b.id]);
   const selectedCount = selectedBills.length;
   const selectedTotal = selectedBills.reduce((a, b) => a + b.total, 0);
-  const selectedKg = selectedBills.reduce((a, b) => a + b.totalKilogram, 0);
+  const selectedKg = selectedBills.reduce((a, b) => a + b.totalQuantity, 0);
 
   const pageIds = slice.map((b) => b.id);
   const allPageSelected =
@@ -512,7 +512,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
                       {formatBaht(bill.total)}
                     </div>
                     <div className="font-num mt-[5px] text-[10px] leading-[1.1] text-ink/45">
-                      {formatKg(bill.totalKilogram)} · {bill.itemCount} รายการ
+                      {formatKg(bill.totalQuantity)} · {bill.itemCount} รายการ
                     </div>
                   </div>
                   {!selectMode && (

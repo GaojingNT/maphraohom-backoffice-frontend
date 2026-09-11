@@ -18,7 +18,7 @@ import {
   type CustomerListItem,
 } from "@/lib/api/customers";
 import { getStoreProducts } from "@/lib/api/stores";
-import { formatBaht, formatKg } from "@/lib/format";
+import { formatBaht, formatKg, unitLabel } from "@/lib/format";
 import { slipUrl } from "@/lib/slip-url";
 import { useToast } from "@/components/toast-provider";
 import type { Bill, Store, StoreProductPrice } from "@/lib/types";
@@ -26,7 +26,7 @@ import type { Bill, Store, StoreProductPrice } from "@/lib/types";
 interface FormItem {
   key: string;
   productId: number | null;
-  kilogram: string;
+  quantity: string;
 }
 
 interface FormErrors {
@@ -62,7 +62,7 @@ function hasErrors(errors: FormErrors): boolean {
 
 let itemKeySeq = 0;
 function createFormItem(): FormItem {
-  return { key: `i${itemKeySeq++}`, productId: null, kilogram: "" };
+  return { key: `i${itemKeySeq++}`, productId: null, quantity: "" };
 }
 
 export default function BillFormView({
@@ -90,7 +90,7 @@ export default function BillFormView({
       ? editingBill.items.map((it) => ({
           key: `i${itemKeySeq++}`,
           productId: it.productId,
-          kilogram: String(it.kilogram),
+          quantity: String(it.quantity),
         }))
       : [createFormItem()],
   );
@@ -210,10 +210,10 @@ export default function BillFormView({
       prev.map((it) => (it.key === key ? { ...it, productId } : it)),
     );
   }
-  function updateItemKilogram(key: string, raw: string) {
-    const kilogram = sanitizeNumberInput(raw);
+  function updateItemQuantity(key: string, raw: string) {
+    const quantity = sanitizeNumberInput(raw);
     setItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, kilogram } : it)),
+      prev.map((it) => (it.key === key ? { ...it, quantity } : it)),
     );
   }
   function addItem() {
@@ -239,12 +239,19 @@ export default function BillFormView({
   }
 
   const itemsComputed = items.map((it) => {
-    const price = products.find((p) => p.productId === it.productId)?.price;
-    const kg = parseFloat(it.kilogram) || 0;
-    const subtotal = price ? kg * price : 0;
-    return { ...it, price: price ?? null, kg, subtotal };
+    const product = products.find((p) => p.productId === it.productId);
+    const qty = parseFloat(it.quantity) || 0;
+    const subtotal = product ? qty * product.price : 0;
+    return {
+      ...it,
+      price: product?.price ?? null,
+      unit: product?.unit ?? "กก.",
+      isPromotion: product?.isPromotion ?? false,
+      qty,
+      subtotal,
+    };
   });
-  const kgTotal = itemsComputed.reduce((a, it) => a + it.kg, 0);
+  const kgTotal = itemsComputed.reduce((a, it) => a + it.qty, 0);
   const itemsSubtotal = itemsComputed.reduce((a, it) => a + it.subtotal, 0);
   const discountNum = parseFloat(discount) || 0;
   const shippingNum = parseFloat(shippingFee) || 0;
@@ -258,8 +265,8 @@ export default function BillFormView({
     if (items.length === 0) next.itemsList = "ต้องมีสินค้าอย่างน้อย 1 รายการ";
     items.forEach((it) => {
       if (!it.productId) next.items[it.key] = "เลือกสินค้าของรายการนี้";
-      else if (!(parseFloat(it.kilogram) > 0))
-        next.items[it.key] = "น้ำหนักต้องมากกว่า 0";
+      else if (!(parseFloat(it.quantity) > 0))
+        next.items[it.key] = "จำนวนต้องมากกว่า 0";
     });
     return next;
   }
@@ -284,7 +291,7 @@ export default function BillFormView({
       customerPhone: customerPhone.trim(),
       items: items.map((it) => ({
         productId: it.productId!,
-        kilogram: parseFloat(it.kilogram),
+        quantity: parseFloat(it.quantity),
       })),
       discount: discountNum,
       shippingFee: shippingNum,
@@ -418,7 +425,8 @@ export default function BillFormView({
                         </option>
                         {products.map((p) => (
                           <option key={p.productId} value={p.productId}>
-                            {p.productName} — {formatBaht(p.price)}/กก.
+                            {p.productName} — {formatBaht(p.price)}/{p.unit}
+                            {p.isPromotion ? " (โปร)" : ""}
                           </option>
                         ))}
                       </select>
@@ -428,19 +436,25 @@ export default function BillFormView({
                         className="pointer-events-none absolute top-[17px] right-3.5 text-ink/50"
                       />
                     </div>
+                    {it.isPromotion && (
+                      <div className="border-b border-ink/12 bg-accent-100 px-[13px] py-1.5 text-[11px] font-semibold text-accent">
+                        กำลังโปร
+                      </div>
+                    )}
                     <div className="grid grid-cols-[1fr_auto] items-stretch">
                       <div className="flex items-center border-r border-ink/12">
                         <input
-                          value={it.kilogram}
+                          value={it.quantity}
                           onChange={(e) =>
-                            updateItemKilogram(it.key, e.target.value)
+                            updateItemQuantity(it.key, e.target.value)
                           }
                           inputMode="decimal"
                           placeholder="0"
                           className="font-num h-12 min-w-0 flex-1 border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
                         />
                         <span className="px-3 text-[11.5px] font-semibold text-ink/50">
-                          กก. × {it.price != null ? formatBaht(it.price) : "฿—"}
+                          {unitLabel(it.unit)} ×{" "}
+                          {it.price != null ? formatBaht(it.price) : "฿—"}
                         </span>
                       </div>
                       <div className="font-num flex items-center px-[13px] text-[14.5px] font-bold whitespace-nowrap text-accent">

@@ -41,7 +41,7 @@ export default async function ExportSummaryPage({
       items: b.items.map((it) => ({
         id: it.id,
         productName: it.productName,
-        kgLabel: formatKg(it.kilogram),
+        kgLabel: formatKg(it.quantity),
         subtotalLabel: formatBaht(it.subtotal),
       })),
       adjustLabel: [discountLabel, shippingLabel].filter(Boolean).join(" · "),
@@ -53,7 +53,7 @@ export default async function ExportSummaryPage({
   for (const b of bills) {
     for (const it of b.items) {
       const entry = productMap.get(it.productName) ?? { kg: 0, value: 0 };
-      entry.kg += it.kilogram;
+      entry.kg += it.quantity;
       entry.value += it.subtotal;
       productMap.set(it.productName, entry);
     }

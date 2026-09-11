@@ -32,5 +32,11 @@ export function formatDateFull(iso: string): string {
 }
 
 export function sumKg(bill: Bill): number {
-  return bill.items.reduce((total, item) => total + item.kilogram, 0);
+  return bill.items.reduce((total, item) => total + item.quantity, 0);
+}
+
+// Full-word unit label for a product's selling unit, used next to the
+// quantity input/display — "กก." reads as "กิโลกรัม" there, "ขวด" stays as-is.
+export function unitLabel(unit: string): string {
+  return unit === "กก." ? "กิโลกรัม" : unit;
 }

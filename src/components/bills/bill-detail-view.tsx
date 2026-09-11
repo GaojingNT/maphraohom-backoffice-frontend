@@ -134,11 +134,19 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
               className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-t border-ink/13 px-5 py-3"
             >
               <div className="min-w-0">
-                <div className="text-[13.5px] leading-[1.4] font-semibold">
+                <div className="flex items-center gap-1.5 text-[13.5px] leading-[1.4] font-semibold">
                   {it.productName}
+                  {it.isPromotion && (
+                    <span className="rounded-none bg-accent-100 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                      โปร
+                    </span>
+                  )}
                 </div>
                 <div className="font-num mt-1 text-[11px] text-ink/50">
-                  {formatKg(it.kilogram)} × {formatBaht(it.price)}/กก.
+                  {it.quantity.toLocaleString("en-US", {
+                    maximumFractionDigits: 1,
+                  })}{" "}
+                  {it.unit} × {formatBaht(it.price)}/{it.unit}
                 </div>
               </div>
               <div className="font-num text-[14.5px] font-bold whitespace-nowrap">

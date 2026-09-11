@@ -24,7 +24,7 @@ export default async function ExportReceiptPage({
 
   const receipts = bills.map((b) => {
     const itemsTotal = b.items.reduce((a, it) => a + it.subtotal, 0);
-    const sumKgAll = b.items.reduce((a, it) => a + it.kilogram, 0);
+    const sumKgAll = b.items.reduce((a, it) => a + it.quantity, 0);
     return {
       id: b.id,
       storeName: b.storeName || "—",
@@ -39,7 +39,7 @@ export default async function ExportReceiptPage({
         id: it.id,
         no: String(i + 1).padStart(2, "0"),
         productName: it.productName,
-        kgLabel: formatKg(it.kilogram),
+        kgLabel: formatKg(it.quantity),
         priceLabel: formatBaht(it.price),
         subtotalLabel: formatBaht(it.subtotal),
       })),

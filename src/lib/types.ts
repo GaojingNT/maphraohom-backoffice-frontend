@@ -5,22 +5,28 @@ export interface Store {
   logo: string;
 }
 
-// One product's currently effective price at a store — see
-// responses.StoreProductPriceItem, returned by GET /stores/{id}/products.
+// One product's currently resolved price at a store (promotion price if one
+// is active, else the base price) — see responses.StoreProductPriceItem,
+// returned by GET /stores/{id}/products.
 export interface StoreProductPrice {
   productId: number;
   productName: string;
+  unit: string;
   price: number;
-  effectiveFrom: string;
+  isPromotion: boolean;
+  promotionId?: number;
 }
 
 export interface BillItem {
   id: number;
   productId: number;
   productName: string;
-  kilogram: number;
+  unit: string;
+  quantity: number;
   price: number;
   subtotal: number;
+  isPromotion: boolean;
+  promotionId?: number;
 }
 
 // Shape returned by GET /bills (paginated list) — see
@@ -33,7 +39,7 @@ export interface BillListItem {
   customerName: string;
   customerAddress: string;
   total: number;
-  totalKilogram: number;
+  totalQuantity: number;
   itemCount: number;
   createdAt: string;
 }

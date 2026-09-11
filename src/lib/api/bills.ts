@@ -46,7 +46,7 @@ export async function deleteBill(id: number): Promise<void> {
 
 export interface CreateBillItemInput {
   productId: number;
-  kilogram: number;
+  quantity: number;
 }
 
 export interface CreateBillInput {
