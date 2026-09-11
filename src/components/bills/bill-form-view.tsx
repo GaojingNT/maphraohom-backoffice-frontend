@@ -15,7 +15,9 @@ import {
   getCustomerAddresses,
   getCustomerPhones,
   searchCustomers,
+  type CustomerAddressItem,
   type CustomerListItem,
+  type CustomerPhoneItem,
 } from "@/lib/api/customers";
 import { getStoreProducts } from "@/lib/api/stores";
 import { formatBaht, formatKg, unitLabel } from "@/lib/format";
@@ -121,6 +123,10 @@ export default function BillFormView({
     CustomerListItem[]
   >([]);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [addressOptions, setAddressOptions] = useState<CustomerAddressItem[]>(
+    [],
+  );
+  const [phoneOptions, setPhoneOptions] = useState<CustomerPhoneItem[]>([]);
 
   // Debounced customer-name search. The `if (...) return;` guards below
   // never call setState directly — only the resolved fetch callback does —
@@ -181,11 +187,16 @@ export default function BillFormView({
     setCustomerName(customer.name);
     setShowCustomerSuggestions(false);
     setCustomerSuggestions([]);
+    setAddressOptions([]);
+    setPhoneOptions([]);
     try {
       const [addresses, phones] = await Promise.all([
         getCustomerAddresses(customer.id),
         getCustomerPhones(customer.id),
       ]);
+      setAddressOptions(addresses);
+      setPhoneOptions(phones);
+      // Backend orders default-first, so [0] is the default to prefill.
       if (addresses.length > 0) setCustomerAddress(addresses[0].address);
       if (phones.length > 0) setCustomerPhone(phones[0].phone);
     } catch {
@@ -232,6 +243,8 @@ export default function BillFormView({
     setCustomerPhone("");
     setShowCustomerSuggestions(false);
     setCustomerSuggestions([]);
+    setAddressOptions([]);
+    setPhoneOptions([]);
     setDiscount("");
     setShippingFee("");
     clearSlip();
@@ -536,6 +549,31 @@ export default function BillFormView({
             placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
             className="w-full resize-none border border-divider bg-bg px-[13px] py-3 text-[15px] leading-[1.5] outline-none"
           />
+          {addressOptions.length > 1 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {addressOptions.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setCustomerAddress(a.address)}
+                  className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-left text-[11.5px] leading-[1.4] ${
+                    customerAddress === a.address
+                      ? "border-accent bg-accent-100 text-accent"
+                      : "border-divider bg-bg text-ink/65"
+                  }`}
+                >
+                  <span className="max-w-[180px] truncate">
+                    {a.label || a.address}
+                  </span>
+                  {a.isDefault && (
+                    <span className="flex-none text-[9.5px] font-semibold uppercase opacity-75">
+                      ค่าเริ่มต้น
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           {errors.customerAddress && (
             <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
               {errors.customerAddress}
@@ -556,6 +594,29 @@ export default function BillFormView({
             autoComplete="off"
             className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
           />
+          {phoneOptions.length > 1 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {phoneOptions.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setCustomerPhone(p.phone)}
+                  className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-[11.5px] leading-[1.4] ${
+                    customerPhone === p.phone
+                      ? "border-accent bg-accent-100 text-accent"
+                      : "border-divider bg-bg text-ink/65"
+                  }`}
+                >
+                  <span>{p.phone}</span>
+                  {p.isDefault && (
+                    <span className="flex-none text-[9.5px] font-semibold uppercase opacity-75">
+                      ค่าเริ่มต้น
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Discount / shipping */}
