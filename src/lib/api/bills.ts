@@ -3,15 +3,22 @@ import { resolveFileUrl } from "@/lib/slip-url";
 import type { BillType } from "@/lib/bill-type";
 import type { Bill, BillListItem } from "@/lib/types";
 
-// The backend returns slipUrl as a path relative to the API's own origin
-// (e.g. "/api/v1/files/slip/..."), not the frontend's — used as-is in an
-// <img>/background-image, the browser would resolve it against whatever
-// origin is serving the page instead (a silent 404 in production, where the
-// frontend and API are on different subdomains). Every response that can
-// carry a slipUrl is normalized here, once, so nothing downstream has to
-// remember to do it.
-function resolveBillSlipUrl(bill: Bill): Bill {
-  return bill.slipUrl ? { ...bill, slipUrl: resolveFileUrl(bill.slipUrl) } : bill;
+// The backend returns slipUrl/storeLogo/storeSignature as paths relative to
+// the API's own origin (e.g. "/api/v1/files/slip/..."), not the frontend's —
+// used as-is in an <img>/background-image, the browser would resolve them
+// against whatever origin is serving the page instead (a silent 404 in
+// production, where the frontend and API are on different subdomains).
+// Every response that can carry these is normalized here, once, so nothing
+// downstream has to remember to do it.
+function resolveBillFileUrls(bill: Bill): Bill {
+  return {
+    ...bill,
+    slipUrl: bill.slipUrl ? resolveFileUrl(bill.slipUrl) : bill.slipUrl,
+    storeLogo: bill.storeLogo ? resolveFileUrl(bill.storeLogo) : bill.storeLogo,
+    storeSignature: bill.storeSignature
+      ? resolveFileUrl(bill.storeSignature)
+      : bill.storeSignature,
+  };
 }
 
 // The list page filters/paginates client-side (matches the design
@@ -70,7 +77,7 @@ export async function getBill(id: number): Promise<Bill> {
   if (!res.ok) {
     throw new Error(`GET /bills/${id} failed with status ${res.status}`);
   }
-  return resolveBillSlipUrl(await res.json());
+  return resolveBillFileUrls(await res.json());
 }
 
 export async function deleteBill(id: number): Promise<void> {
@@ -111,7 +118,7 @@ export async function createBill(input: CreateBillInput): Promise<Bill> {
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, "POST /bills failed");
-  return resolveBillSlipUrl(await res.json());
+  return resolveBillFileUrls(await res.json());
 }
 
 // storeId/type must match the bill being edited — the backend rejects a
@@ -128,7 +135,7 @@ export async function updateBill(
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, `PUT /bills/${id} failed`);
-  return resolveBillSlipUrl(await res.json());
+  return resolveBillFileUrls(await res.json());
 }
 
 // Slip is attached/replaced/removed through its own endpoints, independent

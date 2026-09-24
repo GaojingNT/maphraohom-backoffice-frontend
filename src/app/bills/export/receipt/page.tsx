@@ -30,6 +30,10 @@ export default async function ExportReceiptPage({
       id: b.id,
       config,
       storeName: b.storeName || "—",
+      storeLogo: b.storeLogo || null,
+      storeAddress: b.storeAddress || "",
+      storePhone: b.storePhone || "",
+      storeSignature: b.storeSignature || null,
       bookNo: b.bookNo,
       receiptNo: b.receiptNo,
       billIdLabel: `#${b.id}`,
@@ -37,6 +41,7 @@ export default async function ExportReceiptPage({
       dateLabel: formatDateFull(b.createdAt),
       customerName: b.customerName,
       customerAddress: b.customerAddress,
+      customerPhone: b.customerPhone,
       items: b.items.map((it, i) => ({
         id: it.id,
         no: String(i + 1).padStart(2, "0"),
@@ -96,17 +101,31 @@ export default async function ExportReceiptPage({
               {/* Top half */}
               <div className="box-border flex flex-1 flex-col border-b-2 border-dashed border-[rgba(22,33,26,0.45)] px-[44px] pt-[44px] pb-[24px]">
                 <div className="flex items-start justify-between gap-6 border-b-2 border-[#16211a] pb-3.5">
-                  <div>
-                    <div className="font-num text-[9px] leading-none tracking-[.2em] text-accent uppercase">
-                      มะพร้าวหอม
-                    </div>
-                    <div className="mt-[7px] text-[17px] leading-[1.3] font-bold">
-                      {rc.storeName}
-                    </div>
-                    <div className="mt-[5px] text-[9.5px] leading-[1.55] text-[#4a544d]">
-                      จำหน่ายมะพร้าวสด · ขูด หั่น คว้าน คั้นกะทิ
-                      <br />
-                      โทร 0X-XXX-XXXX · เลขประจำตัวผู้เสียภาษี X-XXXX-XXXXX-XX-X
+                  <div className="flex items-start gap-3">
+                    {rc.storeLogo && (
+                      // Real <img> (not a CSS background) so it survives
+                      // "Save as PDF" without "Background graphics" on —
+                      // same reasoning as the slip <img> below.
+                      <img
+                        src={rc.storeLogo}
+                        alt={rc.storeName}
+                        className="h-[50px] w-[50px] flex-none border border-[rgba(22,33,26,0.18)] object-contain"
+                      />
+                    )}
+                    <div>
+                      <div className="text-[17px] leading-[1.3] font-bold">
+                        {rc.storeName}
+                      </div>
+                      {rc.storeAddress && (
+                        <div className="mt-[5px] max-w-[240px] text-[9px] leading-[1.5] text-[#4a544d]">
+                          {rc.storeAddress}
+                        </div>
+                      )}
+                      {rc.storePhone && (
+                        <div className="font-num mt-[3px] text-[9px] leading-[1.5] text-[#4a544d]">
+                          โทร {rc.storePhone}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex-none text-right">
@@ -139,6 +158,11 @@ export default async function ExportReceiptPage({
                     <div className="mt-1 text-[9.5px] leading-[1.5] text-[#4a544d]">
                       {rc.customerAddress}
                     </div>
+                    {rc.customerPhone && (
+                      <div className="font-num mt-0.5 text-[9.5px] leading-[1.5] text-[#4a544d]">
+                        โทร {rc.customerPhone}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="font-num text-[8.5px] leading-none tracking-[.16em] text-[#6b746d] uppercase">
@@ -270,15 +294,23 @@ export default async function ExportReceiptPage({
                   </div>
                 )}
 
-                <div className="mt-[22px] grid grid-cols-2 gap-[60px]">
-                  <div className="text-center">
-                    <div className="h-[34px] border-b border-[#16211a]" />
-                    <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
-                      {rc.config.signatureLabels[0]}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="h-[34px] border-b border-[#16211a]" />
+                {/* Only the issuing store's own signature line stays — the
+                    counterparty isn't expected to co-sign a printed
+                    receipt/voucher. Pre-filled with the store's saved
+                    signature image when it has one; falls back to a blank
+                    line for a physical signature otherwise. */}
+                <div className="mt-[22px] flex justify-end">
+                  <div className="w-[220px] text-center">
+                    {rc.storeSignature ? (
+                      <img
+                        src={rc.storeSignature}
+                        alt="ลายเซ็น"
+                        className="mx-auto h-[42px] object-contain"
+                      />
+                    ) : (
+                      <div className="h-[42px]" />
+                    )}
+                    <div className="border-b border-[#16211a]" />
                     <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
                       {rc.config.signatureLabels[1]}
                     </div>
