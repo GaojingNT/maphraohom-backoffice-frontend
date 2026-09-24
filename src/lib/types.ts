@@ -53,6 +53,9 @@ export interface Bill {
   storeId: number;
   storeName: string;
   storeLogo?: string;
+  storeAddress?: string;
+  storePhone?: string;
+  storeSignature?: string;
   customerId?: number;
   bookNo: number;
   receiptNo: number;
