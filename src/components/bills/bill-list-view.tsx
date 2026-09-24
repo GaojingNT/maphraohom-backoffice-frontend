@@ -15,13 +15,22 @@ import {
   Receipt,
   Search,
 } from "lucide-react";
-import { formatBaht, formatDateShort, formatKg } from "@/lib/format";
+import { formatBaht, formatDateShort } from "@/lib/format";
+import { toNumber } from "@/lib/money";
+import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
 import type { BillListItem } from "@/lib/types";
 
 const PAGE_SIZE = 8;
 
+type TypeTab = "all" | BillType;
 type FilterMode = "all" | "day" | "month" | "year";
 type SearchBy = "customer_name" | "customer_address";
+
+const TYPE_TABS: { key: TypeTab; label: string }[] = [
+  { key: "all", label: "ทั้งหมด" },
+  { key: "receipt", label: BILL_TYPE_CONFIG.receipt.title },
+  { key: "payment", label: BILL_TYPE_CONFIG.payment.title },
+];
 
 const FILTER_MODES: { key: FilterMode; label: string }[] = [
   { key: "all", label: "ทั้งหมด" },
@@ -58,6 +67,7 @@ function periodLabelOf(key: string, mode: FilterMode): string {
 export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [typeTab, setTypeTab] = useState<TypeTab>("all");
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState<SearchBy>("customer_name");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -72,25 +82,30 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const [selected, setSelected] = useState<Record<number, true>>({});
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
+  const byType = useMemo(
+    () => (typeTab === "all" ? bills : bills.filter((b) => b.type === typeTab)),
+    [bills, typeTab],
+  );
+
   const periodsForMode = useMemo(() => {
     if (filterMode === "all") return [];
     const map = new Map<string, { count: number; total: number }>();
-    for (const bill of bills) {
+    for (const bill of byType) {
       const key = periodKeyOf(bill.createdAt, filterMode);
       const entry = map.get(key) ?? { count: 0, total: 0 };
       entry.count += 1;
-      entry.total += bill.total;
+      entry.total += toNumber(bill.total);
       map.set(key, entry);
     }
     return [...map.entries()]
       .map(([key, value]) => ({ key, ...value }))
       .sort((a, b) => (a.key < b.key ? 1 : -1));
-  }, [bills, filterMode]);
+  }, [byType, filterMode]);
 
   const activePeriodKey = filterPeriod ?? periodsForMode[0]?.key ?? null;
 
   const filtered = useMemo(() => {
-    let rows = bills;
+    let rows = byType;
     if (filterMode !== "all" && activePeriodKey) {
       rows = rows.filter(
         (b) => periodKeyOf(b.createdAt, filterMode) === activePeriodKey,
@@ -105,7 +120,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
       );
     }
     return rows;
-  }, [bills, filterMode, activePeriodKey, search, searchBy]);
+  }, [byType, filterMode, activePeriodKey, search, searchBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -113,8 +128,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const sumTotal = filtered.reduce((a, b) => a + b.total, 0);
-  const sumKgAll = filtered.reduce((a, b) => a + b.totalQuantity, 0);
+  const sumTotal = filtered.reduce((a, b) => a + toNumber(b.total), 0);
 
   const filterChipLabel =
     filterMode === "all"
@@ -143,8 +157,8 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
 
   const selectedBills = bills.filter((b) => selected[b.id]);
   const selectedCount = selectedBills.length;
-  const selectedTotal = selectedBills.reduce((a, b) => a + b.total, 0);
-  const selectedKg = selectedBills.reduce((a, b) => a + b.totalQuantity, 0);
+  const selectedTotal = selectedBills.reduce((a, b) => a + toNumber(b.total), 0);
+  const missingSlipCount = filtered.filter((b) => !b.hasSlip).length;
 
   const pageIds = slice.map((b) => b.id);
   const allPageSelected =
@@ -242,9 +256,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
                   : "ยังไม่ได้เลือกบิล"}
               </div>
               <div className="font-num mt-1 text-[11px] opacity-90">
-                {selectedCount > 0
-                  ? `${formatBaht(selectedTotal)} · ${formatKg(selectedKg)}`
-                  : "แตะเพื่อเลือก"}
+                {selectedCount > 0 ? formatBaht(selectedTotal) : "แตะเพื่อเลือก"}
               </div>
             </div>
             <div className="flex flex-none items-center gap-2">
@@ -274,6 +286,32 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
         </div>
       )}
 
+      {/* Type tabs */}
+      <div className="flex border-b-2 border-divider bg-surface">
+        {TYPE_TABS.map((t) => {
+          const active = typeTab === t.key;
+          const activeClass =
+            t.key === "all"
+              ? "bg-ink text-white"
+              : `${BILL_TYPE_CONFIG[t.key].color.bg} text-white`;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                setTypeTab(t.key);
+                setPage(1);
+              }}
+              className={`min-h-11 flex-1 border-0 border-r border-ink/12 px-3 text-[12.5px] font-semibold last:border-r-0 ${
+                active ? activeClass : "text-ink/62"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Summary bar */}
       <div className="grid grid-cols-3 border-b-2 border-divider bg-surface">
         <div className="border-r border-ink/14 p-[14px]">
@@ -286,18 +324,18 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
         </div>
         <div className="border-r border-ink/14 p-[14px]">
           <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
-            น้ำหนัก
-          </div>
-          <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold">
-            {formatKg(sumKgAll)}
-          </div>
-        </div>
-        <div className="p-[14px]">
-          <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
             เฉลี่ย/บิล
           </div>
           <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold">
             {formatBaht(filtered.length ? sumTotal / filtered.length : 0)}
+          </div>
+        </div>
+        <div className="p-[14px]">
+          <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
+            ยังไม่มีสลิป
+          </div>
+          <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold">
+            {missingSlipCount.toLocaleString("en-US")}
           </div>
         </div>
       </div>
@@ -468,6 +506,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
         <div className="flex flex-col">
           {slice.map((bill) => {
             const isSelected = !!selected[bill.id];
+            const rowConfig = BILL_TYPE_CONFIG[bill.type];
             const rowClassName = `grid items-center gap-3.5 border-b border-divider-light px-5 py-[15px] text-left text-ink ${
               selectMode ? "grid-cols-[22px_1fr_auto]" : "grid-cols-[1fr_auto]"
             } ${
@@ -491,13 +530,17 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-num bg-accent-100 px-[6px] py-1 text-[10px] font-semibold tracking-[.06em] text-accent">
-                      #{bill.receiptNo}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`font-num px-[6px] py-1 text-[10px] font-semibold tracking-[.06em] ${rowConfig.color.bgSoft} ${rowConfig.color.text}`}
+                    >
+                      {rowConfig.title} #{bill.receiptNo}
                     </span>
-                    <span className="text-[10px] font-medium text-ink/45">
-                      {formatDateShort(bill.createdAt)}
-                    </span>
+                    {!bill.hasSlip && (
+                      <span className="bg-ink/10 px-[6px] py-1 text-[9.5px] font-semibold text-ink/55">
+                        ยังไม่มีสลิป
+                      </span>
+                    )}
                   </div>
                   <div className="mt-2 truncate text-[16px] font-semibold">
                     {bill.customerName}
@@ -512,7 +555,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
                       {formatBaht(bill.total)}
                     </div>
                     <div className="font-num mt-[5px] text-[10px] leading-[1.1] text-ink/45">
-                      {formatKg(bill.totalQuantity)} · {bill.itemCount} รายการ
+                      {formatDateShort(bill.createdAt)} · {bill.itemCount} รายการ
                     </div>
                   </div>
                   {!selectMode && (

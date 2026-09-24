@@ -21,6 +21,8 @@ interface BillTypeConfig {
   /** Printed document title (e.g. "ใบเสร็จรับเงิน"). */
   documentTitle: string;
   documentTitleEn: string;
+  /** Heading above the counterparty block on the printed document. */
+  counterpartyHeading: string;
   /** Tailwind color tokens for this type — see globals.css. */
   color: {
     text: string;
@@ -42,6 +44,7 @@ export const BILL_TYPE_CONFIG: Record<BillType, BillTypeConfig> = {
     signatureLabels: ["ผู้จ่ายเงิน", "ผู้รับเงิน / ผู้มีอำนาจลงนาม"],
     documentTitle: "ใบเสร็จรับเงิน",
     documentTitleEn: "RECEIPT",
+    counterpartyHeading: "ได้รับเงินจาก",
     color: {
       text: "text-accent",
       bg: "bg-accent",
@@ -60,6 +63,7 @@ export const BILL_TYPE_CONFIG: Record<BillType, BillTypeConfig> = {
     signatureLabels: ["ผู้รับเงิน", "ผู้จ่ายเงิน / ผู้มีอำนาจลงนาม"],
     documentTitle: "ใบสำคัญจ่าย",
     documentTitleEn: "PAYMENT VOUCHER",
+    counterpartyHeading: "จ่ายเงินให้",
     color: {
       text: "text-payment",
       bg: "bg-payment",

@@ -9,7 +9,6 @@ export interface CustomerListItem {
 export interface CustomerAddressItem {
   id: number;
   address: string;
-  label?: string;
   isDefault: boolean;
 }
 

@@ -3,30 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  ChevronLeft,
-  ImageIcon,
-  Pencil,
-  Printer,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ChevronLeft, Pencil, Printer, Trash2 } from "lucide-react";
 import { deleteBill } from "@/lib/api/bills";
-import { formatBaht, formatDateFull, formatKg, sumKg } from "@/lib/format";
-import { slipUrl } from "@/lib/slip-url";
+import { BILL_TYPE_CONFIG } from "@/lib/bill-type";
+import { formatBaht, formatDateFull, formatQuantity, formatQuantityByUnit } from "@/lib/format";
+import { toNumber } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
+import SlipPanel from "@/components/bills/slip-panel";
 import type { Bill } from "@/lib/types";
 
-export default function BillDetailView({ bill }: { bill: Bill }) {
+export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [slipOpen, setSlipOpen] = useState(false);
+  const [bill, setBill] = useState(initialBill);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const config = BILL_TYPE_CONFIG[bill.type];
 
-  const itemsSubtotal = bill.items.reduce((a, it) => a + it.subtotal, 0);
-  const weightTotal = sumKg(bill);
-  const hasSlip = !!bill.slip;
+  const itemsSubtotal = bill.items.reduce((a, it) => a + toNumber(it.subtotal), 0);
+  const quantitySummary = formatQuantityByUnit(bill.items);
 
   async function handleDelete() {
     setDeleting(true);
@@ -45,19 +40,19 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
     { label: "รหัสบิล", value: `#${bill.id}` },
     { label: "สาขา", value: bill.storeName || "—" },
     {
-      label: "รหัสลูกค้า",
+      label: `รหัส${config.partyLabel}`,
       value: bill.customerId != null ? `C${bill.customerId}` : "—",
     },
-    { label: "เบอร์โทรศัพท์", value: bill.customerPhone || "—" },
-    { label: "น้ำหนักรวม", value: formatKg(weightTotal) },
+    { label: `เบอร์โทรศัพท์${config.partyLabel}`, value: bill.customerPhone || "—" },
+    { label: "จำนวนรวม", value: quantitySummary || "—" },
     { label: "ยอดรวมสินค้า", value: formatBaht(itemsSubtotal) },
     {
       label: "ส่วนลด",
-      value: bill.discount ? `− ${formatBaht(bill.discount)}` : "—",
+      value: toNumber(bill.discount) ? `− ${formatBaht(bill.discount)}` : "—",
     },
     {
       label: "ค่าจัดส่ง",
-      value: bill.shippingFee ? `+ ${formatBaht(bill.shippingFee)}` : "—",
+      value: toNumber(bill.shippingFee) ? `+ ${formatBaht(bill.shippingFee)}` : "—",
     },
     { label: "สร้างเมื่อ", value: formatDateFull(bill.createdAt) },
     { label: "แก้ไขล่าสุด", value: formatDateFull(bill.updatedAt) },
@@ -71,7 +66,7 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
           <div className="flex items-center justify-between">
             <Link
               href="/"
-              className="flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold text-accent"
+              className={`flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold ${config.color.text}`}
             >
               <ChevronLeft size={16} />
               กลับ
@@ -93,7 +88,12 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
               </button>
             </div>
           </div>
-          <div className="font-num mt-3 text-[10px] tracking-[.1em] text-ink/50">
+          <div
+            className={`mt-3 inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold tracking-[.08em] uppercase ${config.color.bgSoft} ${config.color.text}`}
+          >
+            {config.title}
+          </div>
+          <div className="font-num mt-2 text-[10px] tracking-[.1em] text-ink/50">
             เล่มที่ {bill.bookNo} · เลขที่ {bill.receiptNo}
           </div>
           <h2 className="mt-2.5 text-[26px] leading-[1.25] font-bold">
@@ -105,7 +105,7 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
         </div>
 
         {/* Total block */}
-        <div className="border-b-2 border-divider bg-accent px-5 py-5 text-white">
+        <div className={`border-b-2 border-divider px-5 py-5 text-white ${config.color.bg}`}>
           <div className="text-[10px] leading-none font-semibold tracking-[.18em] uppercase opacity-90">
             ยอดสุทธิ
           </div>
@@ -114,7 +114,8 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
           </div>
           <div className="mt-2.5 text-[12px] leading-[1.4] font-medium">
             {bill.storeName ? `${bill.storeName} · ` : ""}
-            {bill.items.length} รายการ · {formatKg(weightTotal)}
+            {bill.items.length} รายการ
+            {quantitySummary ? ` · ${quantitySummary}` : ""}
           </div>
         </div>
 
@@ -134,19 +135,12 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
               className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-t border-ink/13 px-5 py-3"
             >
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-[13.5px] leading-[1.4] font-semibold">
+                <div className="text-[13.5px] leading-[1.4] font-semibold">
                   {it.productName}
-                  {it.isPromotion && (
-                    <span className="rounded-none bg-accent-100 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                      โปร
-                    </span>
-                  )}
                 </div>
                 <div className="font-num mt-1 text-[11px] text-ink/50">
-                  {it.quantity.toLocaleString("en-US", {
-                    maximumFractionDigits: 1,
-                  })}{" "}
-                  {it.unit} × {formatBaht(it.price)}/{it.unit}
+                  {formatQuantity(it.quantity, it.unit)} × {formatBaht(it.price)}/
+                  {it.unit}
                 </div>
               </div>
               <div className="font-num text-[14.5px] font-bold whitespace-nowrap">
@@ -173,81 +167,24 @@ export default function BillDetailView({ bill }: { bill: Bill }) {
           ))}
         </div>
 
-        {/* Slip */}
-        <div className="border-b-2 border-divider px-5 py-5">
-          <div className="mb-3 text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
-            สลิปโอนเงิน
-          </div>
-          {hasSlip ? (
-            <button
-              type="button"
-              onClick={() => setSlipOpen(true)}
-              className="relative block h-[200px] w-full cursor-zoom-in overflow-hidden border border-divider bg-surface p-0"
-            >
-              <div
-                role="img"
-                aria-label="สลิปโอนเงิน"
-                className="h-full w-full bg-cover bg-center"
-                style={{ backgroundImage: `url("${slipUrl(bill.slip)}")` }}
-              />
-              <span className="absolute right-0 bottom-0 bg-ink px-[11px] py-[9px] text-[11px] font-semibold text-white">
-                แตะเพื่อดูเต็มจอ
-              </span>
-            </button>
-          ) : (
-            <div className="flex h-[130px] flex-col items-start justify-center gap-2 border border-dashed border-divider px-[18px] text-ink/45">
-              <ImageIcon size={22} strokeWidth={1.6} />
-              <div className="text-[13px] font-semibold">ไม่มีสลิปแนบ</div>
-            </div>
-          )}
-        </div>
+        <SlipPanel
+          billId={bill.id}
+          receiptNo={bill.receiptNo}
+          slipUrl={bill.slipUrl}
+          onChange={(slipUrl) => setBill((b) => ({ ...b, slipUrl }))}
+        />
 
         {/* Print */}
         <div className="px-5 py-[18px]">
-          <button
-            type="button"
-            onClick={() => showToast("ส่งใบเสร็จเข้าคิวพิมพ์แล้ว")}
-            className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-accent text-[15px] font-semibold text-white"
+          <Link
+            href={`/bills/export/receipt?ids=${bill.id}`}
+            className={`flex min-h-[52px] w-full items-center justify-center gap-2 text-[15px] font-semibold text-white ${config.color.bg}`}
           >
             <Printer size={17} />
-            พิมพ์ใบเสร็จ
-          </button>
+            พิมพ์{config.documentTitle}
+          </Link>
         </div>
       </div>
-
-      {/* Slip lightbox — rendered outside the animated container above:
-          `animation` on an ancestor creates a new stacking context, which
-          would otherwise trap this fixed overlay below the bottom nav. */}
-      {slipOpen && hasSlip && (
-        <div
-          onClick={() => setSlipOpen(false)}
-          className="fixed inset-0 z-[60] flex flex-col bg-[rgba(10,16,12,0.94)] [animation:fadeIn_0.18s_ease_both]"
-        >
-          <div className="flex items-center justify-between px-[18px] py-4 text-white">
-            <div className="text-[12px] font-semibold">
-              สลิป · {bill.receiptNo}
-            </div>
-            <button
-              type="button"
-              onClick={() => setSlipOpen(false)}
-              className="flex h-11 w-11 items-center justify-center border border-white/35 bg-transparent text-white"
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <div className="flex flex-1 items-center justify-center px-4 pb-7">
-            <div
-              role="img"
-              aria-label="สลิปเต็มจอ"
-              className="h-full w-full bg-center bg-no-repeat"
-              style={{
-                backgroundImage: `url("${slipUrl(bill.slip)}")`,
-                backgroundSize: "contain",
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Delete confirm dialog */}
       {confirmDeleteOpen && (

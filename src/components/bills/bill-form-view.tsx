@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
-  Package,
   Plus,
   Trash2,
   Upload,
 } from "lucide-react";
-import { createBill, updateBill } from "@/lib/api/bills";
+import { ApiError, createBill, updateBill, uploadSlip, type BillItemInput } from "@/lib/api/bills";
 import {
   getCustomerAddresses,
   getCustomerPhones,
@@ -19,30 +18,33 @@ import {
   type CustomerListItem,
   type CustomerPhoneItem,
 } from "@/lib/api/customers";
-import { getStoreProducts } from "@/lib/api/stores";
-import { formatBaht, formatKg, unitLabel } from "@/lib/format";
-import { slipUrl } from "@/lib/slip-url";
+import type { ProductListItem } from "@/lib/api/products";
+import { getLastPrices } from "@/lib/api/stores";
+import { formatBaht, priceFieldLabel, quantityFieldLabel } from "@/lib/format";
+import { subtotalBaht, toNumber, totalBaht } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
-import type { Bill, Store, StoreProductPrice } from "@/lib/types";
+import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
+import type { Bill, Store } from "@/lib/types";
+
+const BOTTLE_UNIT = "ขวด";
 
 interface FormItem {
   key: string;
   productId: number | null;
   quantity: string;
+  price: string;
 }
 
 interface FormErrors {
   storeId?: string;
   customerName?: string;
   customerAddress?: string;
+  customerId?: string;
+  discount?: string;
+  shippingFee?: string;
   itemsList?: string;
-  items: Record<string, string>;
+  items: Record<string, { quantity?: string; price?: string; productId?: string }>;
 }
-
-type SlipState =
-  | { kind: "none" }
-  | { kind: "existing"; key: string }
-  | { kind: "new"; file: File; previewUrl: string };
 
 function sanitizeNumberInput(raw: string): string {
   return raw.replace(/[^0-9.]/g, "");
@@ -64,35 +66,74 @@ function hasErrors(errors: FormErrors): boolean {
 
 let itemKeySeq = 0;
 function createFormItem(): FormItem {
-  return { key: `i${itemKeySeq++}`, productId: null, quantity: "" };
+  return { key: `i${itemKeySeq++}`, productId: null, quantity: "", price: "" };
+}
+
+// Maps the backend's "items[N].field" validation errors back onto the form
+// row at that same array position — POST/PUT always sends items in this
+// exact order, so the index lines up.
+function applyServerFieldErrors(
+  fieldErrors: { field: string; tag: string }[],
+  items: FormItem[],
+): FormErrors {
+  const next = emptyErrors();
+  for (const err of fieldErrors) {
+    const itemMatch = /^items\[(\d+)]\.(\w+)$/.exec(err.field);
+    if (itemMatch) {
+      const idx = Number(itemMatch[1]);
+      const item = items[idx];
+      if (!item) continue;
+      next.items[item.key] = {
+        ...next.items[item.key],
+        [itemMatch[2]]: "ค่านี้ไม่ถูกต้อง",
+      };
+      continue;
+    }
+    if (err.field === "items") {
+      next.itemsList = "ต้องมีสินค้าอย่างน้อย 1 รายการ";
+    } else if (err.field === "discount") {
+      next.discount = "ส่วนลดต้องไม่ติดลบ";
+    } else if (err.field === "shippingFee") {
+      next.shippingFee = "ค่าส่งต้องไม่ติดลบ";
+    } else if (err.field === "customerId") {
+      next.customerId = "ไม่พบลูกค้ารายนี้";
+    }
+  }
+  return next;
 }
 
 export default function BillFormView({
+  type,
   stores,
+  products,
   editingBill,
-  initialProducts,
 }: {
+  type: BillType;
   stores: Store[];
+  products: ProductListItem[];
   editingBill?: Bill;
-  initialProducts?: StoreProductPrice[];
 }) {
   const router = useRouter();
   const { showToast } = useToast();
   const isEditing = !!editingBill;
+  const config = BILL_TYPE_CONFIG[type];
+
+  const productById = new Map(products.map((p) => [p.id, p]));
 
   const [storeId, setStoreId] = useState<number | null>(
     editingBill?.storeId ?? null,
   );
-  const [products, setProducts] = useState<StoreProductPrice[]>(
-    () => initialProducts ?? [],
+  const [customerId, setCustomerId] = useState<number | undefined>(
+    editingBill?.customerId,
   );
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [lastPrices, setLastPrices] = useState<Map<number, string>>(new Map());
   const [items, setItems] = useState<FormItem[]>(() =>
     editingBill
       ? editingBill.items.map((it) => ({
           key: `i${itemKeySeq++}`,
           productId: it.productId,
-          quantity: String(it.quantity),
+          quantity: it.quantity,
+          price: it.price,
         }))
       : [createFormItem()],
   );
@@ -105,19 +146,14 @@ export default function BillFormView({
   const [customerPhone, setCustomerPhone] = useState(
     editingBill?.customerPhone ?? "",
   );
-  const [discount, setDiscount] = useState(
-    editingBill?.discount ? String(editingBill.discount) : "",
-  );
-  const [shippingFee, setShippingFee] = useState(
-    editingBill?.shippingFee ? String(editingBill.shippingFee) : "",
-  );
-  const [slipState, setSlipState] = useState<SlipState>(() =>
-    editingBill?.slip
-      ? { kind: "existing", key: editingBill.slip }
-      : { kind: "none" },
-  );
+  const [discount, setDiscount] = useState(editingBill?.discount ?? "");
+  const [shippingFee, setShippingFee] = useState(editingBill?.shippingFee ?? "");
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipPreviewUrl, setSlipPreviewUrl] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>(emptyErrors());
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
 
   const [customerSuggestions, setCustomerSuggestions] = useState<
     CustomerListItem[]
@@ -128,10 +164,7 @@ export default function BillFormView({
   );
   const [phoneOptions, setPhoneOptions] = useState<CustomerPhoneItem[]>([]);
 
-  // Debounced customer-name search. The `if (...) return;` guards below
-  // never call setState directly — only the resolved fetch callback does —
-  // so this stays compliant with react-hooks/set-state-in-effect while
-  // still reacting to customerName changes as the user types.
+  // Debounced customer-name search.
   useEffect(() => {
     const query = customerName.trim();
     if (!query || !showCustomerSuggestions) return;
@@ -151,40 +184,59 @@ export default function BillFormView({
     };
   }, [customerName, showCustomerSuggestions]);
 
-  // Revoke the slip preview URL whenever it's replaced or the form unmounts.
-  // This effect only touches the external object-URL registry — it never
-  // calls setState — so the fetch-on-select-change below is handled
-  // directly in its event handler instead of an effect.
+  // Prefill prices from this store's last-used prices for this bill type —
+  // fetched whenever the store changes, applied only when the user picks a
+  // product (see handleItemProductChange), never overwriting what's typed.
+  // No store selected yet -> nothing to fetch; handleItemProductChange also
+  // guards on storeId so a stale map from a previous store is never used.
+  useEffect(() => {
+    if (storeId == null) return;
+    let cancelled = false;
+    getLastPrices(storeId, type)
+      .then((rows) => {
+        if (!cancelled) {
+          setLastPrices(new Map(rows.map((r) => [r.productId, r.price])));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLastPrices(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId, type]);
+
   useEffect(() => {
     return () => {
-      if (slipState.kind === "new") URL.revokeObjectURL(slipState.previewUrl);
+      if (slipPreviewUrl) URL.revokeObjectURL(slipPreviewUrl);
     };
-  }, [slipState]);
+  }, [slipPreviewUrl]);
 
-  async function handleStoreChange(value: string) {
-    const nextStoreId = value ? Number(value) : null;
-    setStoreId(nextStoreId);
-    setProducts([]);
-    if (nextStoreId == null) return;
-
-    setProductsLoading(true);
-    try {
-      const data = await getStoreProducts(nextStoreId);
-      setProducts(data);
-    } catch {
-      setProducts([]);
-    } finally {
-      setProductsLoading(false);
+  // Warn on browser/back navigation away from unsaved work — the in-app
+  // "ยกเลิก" button below handles the same confirm for its own click.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirty) e.preventDefault();
     }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  function handleStoreChange(value: string) {
+    setDirty(true);
+    setStoreId(value ? Number(value) : null);
   }
 
   function handleCustomerNameChange(value: string) {
+    setDirty(true);
     setCustomerName(value);
+    setCustomerId(undefined);
     setShowCustomerSuggestions(!!value.trim());
   }
 
   async function handleSelectCustomer(customer: CustomerListItem) {
     setCustomerName(customer.name);
+    setCustomerId(customer.id);
     setShowCustomerSuggestions(false);
     setCustomerSuggestions([]);
     setAddressOptions([]);
@@ -205,88 +257,104 @@ export default function BillFormView({
   }
 
   function handleSlipChange(file: File | null) {
+    setDirty(true);
+    if (slipPreviewUrl) URL.revokeObjectURL(slipPreviewUrl);
     if (!file) {
-      setSlipState({ kind: "none" });
+      setSlipFile(null);
+      setSlipPreviewUrl(null);
       return;
     }
-    setSlipState({ kind: "new", file, previewUrl: URL.createObjectURL(file) });
+    setSlipFile(file);
+    setSlipPreviewUrl(URL.createObjectURL(file));
   }
 
   function clearSlip() {
-    setSlipState({ kind: "none" });
+    handleSlipChange(null);
   }
 
-  function updateItemProduct(key: string, productId: number | null) {
+  function handleItemProductChange(key: string, productId: number | null) {
+    setDirty(true);
     setItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, productId } : it)),
+      prev.map((it) => {
+        if (it.key !== key) return it;
+        // Prefill price only when the row doesn't already have one typed.
+        const prefill =
+          productId != null && storeId != null && !it.price
+            ? lastPrices.get(productId)
+            : undefined;
+        return { ...it, productId, price: prefill ?? it.price };
+      }),
     );
   }
   function updateItemQuantity(key: string, raw: string) {
+    setDirty(true);
     const quantity = sanitizeNumberInput(raw);
     setItems((prev) =>
       prev.map((it) => (it.key === key ? { ...it, quantity } : it)),
     );
   }
+  function updateItemPrice(key: string, raw: string) {
+    setDirty(true);
+    const price = sanitizeNumberInput(raw);
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, price } : it)));
+  }
   function addItem() {
+    setDirty(true);
     setItems((prev) => [...prev, createFormItem()]);
   }
   function removeItem(key: string) {
+    setDirty(true);
     setItems((prev) => prev.filter((it) => it.key !== key));
   }
 
-  function resetForm() {
-    setStoreId(null);
-    setProducts([]);
-    setItems([createFormItem()]);
-    setCustomerName("");
-    setCustomerAddress("");
-    setCustomerPhone("");
-    setShowCustomerSuggestions(false);
-    setCustomerSuggestions([]);
-    setAddressOptions([]);
-    setPhoneOptions([]);
-    setDiscount("");
-    setShippingFee("");
-    clearSlip();
-    setErrors(emptyErrors());
-  }
-
   const itemsComputed = items.map((it) => {
-    const product = products.find((p) => p.productId === it.productId);
-    const qty = parseFloat(it.quantity) || 0;
-    const subtotal = product ? qty * product.price : 0;
-    return {
-      ...it,
-      price: product?.price ?? null,
-      unit: product?.unit ?? "กก.",
-      isPromotion: product?.isPromotion ?? false,
-      qty,
-      subtotal,
-    };
+    const product = it.productId != null ? productById.get(it.productId) : undefined;
+    const unit = product?.unit ?? "กก.";
+    const subtotal = subtotalBaht(it.quantity, it.price);
+    return { ...it, unit, subtotal };
   });
-  const kgTotal = itemsComputed.reduce((a, it) => a + it.qty, 0);
+  const subtotalCentsList = itemsComputed.map((it) => Math.round(it.subtotal * 100));
   const itemsSubtotal = itemsComputed.reduce((a, it) => a + it.subtotal, 0);
-  const discountNum = parseFloat(discount) || 0;
-  const shippingNum = parseFloat(shippingFee) || 0;
-  const netTotal = Math.max(0, itemsSubtotal - discountNum + shippingNum);
+  const netTotal = totalBaht(subtotalCentsList, discount, shippingFee);
 
   function validate(): FormErrors {
     const next = emptyErrors();
     if (storeId == null) next.storeId = "เลือกสาขาก่อน";
-    if (!customerName.trim()) next.customerName = "กรอกชื่อลูกค้า";
-    if (!customerAddress.trim()) next.customerAddress = "กรอกที่อยู่จัดส่ง";
+    if (!customerName.trim())
+      next.customerName = `กรอกชื่อ${config.partyLabel}`;
+    if (!customerAddress.trim())
+      next.customerAddress = `กรอกที่อยู่${config.partyLabel}`;
     if (items.length === 0) next.itemsList = "ต้องมีสินค้าอย่างน้อย 1 รายการ";
+    if (toNumber(discount) < 0) next.discount = "ส่วนลดต้องไม่ติดลบ";
+    if (toNumber(shippingFee) < 0) next.shippingFee = "ค่าส่งต้องไม่ติดลบ";
     items.forEach((it) => {
-      if (!it.productId) next.items[it.key] = "เลือกสินค้าของรายการนี้";
-      else if (!(parseFloat(it.quantity) > 0))
-        next.items[it.key] = "จำนวนต้องมากกว่า 0";
+      const rowErr: FormErrors["items"][string] = {};
+      const product = it.productId != null ? productById.get(it.productId) : undefined;
+      if (!it.productId) rowErr.productId = "เลือกสินค้าของรายการนี้";
+      if (!(toNumber(it.quantity) > 0)) {
+        rowErr.quantity = "จำนวนต้องมากกว่า 0";
+      } else if (product?.unit === BOTTLE_UNIT && !Number.isInteger(toNumber(it.quantity))) {
+        rowErr.quantity = "ขวดต้องเป็นจำนวนเต็ม";
+      }
+      if (!(toNumber(it.price) > 0)) rowErr.price = "ราคาต้องมากกว่า 0";
+      if (Object.keys(rowErr).length > 0) next.items[it.key] = rowErr;
     });
     return next;
   }
 
   function handleCancel() {
+    if (dirty) {
+      setConfirmLeaveOpen(true);
+      return;
+    }
     if (editingBill) router.push(`/bills/${editingBill.id}`);
-    else resetForm();
+    else router.push("/");
+  }
+
+  function confirmLeave() {
+    setConfirmLeaveOpen(false);
+    if (editingBill) router.push(`/bills/${editingBill.id}`);
+    else router.push("/");
   }
 
   async function handleSubmit() {
@@ -297,36 +365,52 @@ export default function BillFormView({
       return;
     }
 
-    const baseInput = {
+    const itemInputs: BillItemInput[] = items.map((it) => ({
+      productId: it.productId!,
+      quantity: it.quantity,
+      price: it.price,
+    }));
+
+    const payload = {
+      type,
       storeId: storeId!,
+      customerId,
       customerName: customerName.trim(),
       customerAddress: customerAddress.trim(),
       customerPhone: customerPhone.trim(),
-      items: items.map((it) => ({
-        productId: it.productId!,
-        quantity: parseFloat(it.quantity),
-      })),
-      discount: discountNum,
-      shippingFee: shippingNum,
-      slip: slipState.kind === "new" ? slipState.file : null,
+      discount: discount || "0",
+      shippingFee: shippingFee || "0",
+      items: itemInputs,
     };
 
     setSubmitting(true);
     try {
+      let bill: Bill;
       if (editingBill) {
-        const bill = await updateBill(editingBill.id, {
-          ...baseInput,
-          removeSlip: slipState.kind === "none" && !!editingBill.slip,
-        });
+        bill = await updateBill(editingBill.id, payload);
         showToast("แก้ไขบิลเรียบร้อย");
         router.push(`/bills/${bill.id}`);
       } else {
-        const bill = await createBill(baseInput);
+        bill = await createBill(payload);
+        if (slipFile) {
+          try {
+            await uploadSlip(bill.id, slipFile);
+          } catch {
+            showToast("สร้างบิลแล้ว แต่แนบสลิปไม่สำเร็จ");
+            router.push(`/bills/${bill.id}`);
+            return;
+          }
+        }
         showToast(`บันทึกบิล ${bill.receiptNo} แล้ว`);
         router.push(`/bills/${bill.id}`);
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "บันทึกบิลไม่สำเร็จ");
+      if (err instanceof ApiError && err.fieldErrors.length > 0) {
+        setErrors(applyServerFieldErrors(err.fieldErrors, items));
+        showToast("กรอกข้อมูลไม่ถูกต้อง ตรวจสอบแต่ละแถว");
+      } else {
+        showToast(err instanceof Error ? err.message : "บันทึกบิลไม่สำเร็จ");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -334,15 +418,17 @@ export default function BillFormView({
 
   return (
     <div className="flex flex-1 flex-col pb-28">
-      <div className="border-b-2 border-divider px-5 pt-[26px] pb-4">
-        <div className="text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          {isEditing ? "แก้ไขบิล" : "สร้างบิลใหม่"}
+      <div className={`border-b-2 border-divider px-5 pt-[26px] pb-4`}>
+        <div
+          className={`text-[10px] leading-none font-semibold tracking-[.18em] uppercase ${config.color.text}`}
+        >
+          {isEditing ? `แก้ไข${config.title}` : config.createTitle}
         </div>
         <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          {isEditing ? "แก้ไขบิล" : "ออกบิลใหม่"}
+          {isEditing ? "แก้ไขบิล" : config.title}
         </h1>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink/55">
-          เลขเล่ม เลขที่ใบเสร็จ และราคาต่อกิโล ระบบดึงและคำนวณให้เอง
+          เลขเล่มและเลขที่ ระบบออกให้อัตโนมัติ — กรอกราคาต่อหน่วยเองทุกรายการ
         </p>
       </div>
 
@@ -350,7 +436,7 @@ export default function BillFormView({
         {/* 1. Store */}
         <div>
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            1 · สาขา <span className="text-accent">*</span>
+            1 · สาขา <span className={config.color.text}>*</span>
           </label>
           <div className="relative border border-divider bg-bg">
             <select
@@ -372,7 +458,7 @@ export default function BillFormView({
             />
           </div>
           <div className="mt-[7px] text-[11.5px] leading-[1.5] text-ink/50">
-            แต่ละสาขามีราคาต่อกิโลไม่เท่ากัน — เลือกสาขาก่อนจึงเลือกสินค้าได้
+            เลือกสาขาเพื่อดึงราคาที่เคยใช้ล่าสุดของสาขานี้มาเติมให้ (แก้ไขได้)
           </div>
           {errors.storeId && (
             <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
@@ -385,113 +471,111 @@ export default function BillFormView({
         <div>
           <div className="mb-2.5 flex items-baseline justify-between gap-3">
             <label className="text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              2 · รายการสินค้า <span className="text-accent">*</span>
+              2 · รายการสินค้า <span className={config.color.text}>*</span>
             </label>
             <span className="font-num text-[10.5px] text-ink/50">
-              {items.length} รายการ · {formatKg(kgTotal)}
+              {items.length} รายการ
             </span>
           </div>
 
-          {storeId == null ? (
-            <div className="flex items-center gap-3 border border-dashed border-divider px-4 py-[22px] text-ink/45">
-              <Package size={20} strokeWidth={1.7} className="flex-none" />
-              <span className="text-[12.5px] leading-[1.45] font-semibold">
-                เลือกสาขาด้านบนก่อน ระบบจะดึงราคาสินค้าของสาขานั้นมาให้
-              </span>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-3">
-                {itemsComputed.map((it, idx) => (
-                  <div key={it.key} className="border border-divider bg-bg">
-                    <div className="flex items-center justify-between gap-2 border-b border-ink/12 py-2 pr-2 pl-[13px]">
-                      <span className="font-num text-[10px] tracking-[.13em] text-ink/50">
-                        รายการ {String(idx + 1).padStart(2, "0")}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeItem(it.key)}
-                        disabled={items.length <= 1}
-                        className={`flex h-9 w-9 items-center justify-center border-0 bg-transparent text-danger ${
-                          items.length <= 1 ? "opacity-30" : ""
-                        }`}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                    <div className="relative border-b border-ink/12">
-                      <select
-                        value={it.productId ?? ""}
-                        disabled={productsLoading}
-                        onChange={(e) =>
-                          updateItemProduct(
-                            it.key,
-                            e.target.value ? Number(e.target.value) : null,
-                          )
-                        }
-                        className="h-12 w-full cursor-pointer appearance-none border-0 bg-transparent px-[13px] pr-10 text-[13.5px] font-semibold outline-none"
-                      >
-                        <option value="">
-                          {productsLoading
-                            ? "กำลังโหลดสินค้า…"
-                            : "— เลือกสินค้า —"}
+          <div className="flex flex-col gap-3">
+            {itemsComputed.map((it, idx) => {
+              const rowErr = errors.items[it.key];
+              return (
+                <div key={it.key} className="border border-divider bg-bg">
+                  <div className="flex items-center justify-between gap-2 border-b border-ink/12 py-2 pr-2 pl-[13px]">
+                    <span className="font-num text-[10px] tracking-[.13em] text-ink/50">
+                      รายการ {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(it.key)}
+                      disabled={items.length <= 1}
+                      className={`flex h-9 w-9 items-center justify-center border-0 bg-transparent text-danger ${
+                        items.length <= 1 ? "opacity-30" : ""
+                      }`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="relative border-b border-ink/12">
+                    <select
+                      value={it.productId ?? ""}
+                      onChange={(e) =>
+                        handleItemProductChange(
+                          it.key,
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      className="h-12 w-full cursor-pointer appearance-none border-0 bg-transparent px-[13px] pr-10 text-[13.5px] font-semibold outline-none"
+                    >
+                      <option value="">— เลือกสินค้า —</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.unit})
                         </option>
-                        {products.map((p) => (
-                          <option key={p.productId} value={p.productId}>
-                            {p.productName} — {formatBaht(p.price)}/{p.unit}
-                            {p.isPromotion ? " (โปร)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        strokeWidth={2.2}
-                        className="pointer-events-none absolute top-[17px] right-3.5 text-ink/50"
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={14}
+                      strokeWidth={2.2}
+                      className="pointer-events-none absolute top-[17px] right-3.5 text-ink/50"
+                    />
+                  </div>
+                  {rowErr?.productId && (
+                    <div className="border-b border-ink/12 px-[13px] py-[9px] text-[11.5px] leading-[1.4] text-danger">
+                      {rowErr.productId}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2">
+                    <div className="border-r border-b border-ink/12">
+                      <div className="px-[13px] pt-2 text-[10px] font-semibold text-ink/50">
+                        {quantityFieldLabel(it.unit)}
+                        {it.unit === BOTTLE_UNIT && " · จำนวนเต็มเท่านั้น"}
+                      </div>
+                      <input
+                        value={it.quantity}
+                        onChange={(e) => updateItemQuantity(it.key, e.target.value)}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="font-num h-11 w-full border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
                       />
                     </div>
-                    {it.isPromotion && (
-                      <div className="border-b border-ink/12 bg-accent-100 px-[13px] py-1.5 text-[11px] font-semibold text-accent">
-                        กำลังโปร
+                    <div className="border-b border-ink/12">
+                      <div className="px-[13px] pt-2 text-[10px] font-semibold text-ink/50">
+                        {priceFieldLabel(it.unit)}
                       </div>
-                    )}
-                    <div className="grid grid-cols-[1fr_auto] items-stretch">
-                      <div className="flex items-center border-r border-ink/12">
-                        <input
-                          value={it.quantity}
-                          onChange={(e) =>
-                            updateItemQuantity(it.key, e.target.value)
-                          }
-                          inputMode="decimal"
-                          placeholder="0"
-                          className="font-num h-12 min-w-0 flex-1 border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
-                        />
-                        <span className="px-3 text-[11.5px] font-semibold text-ink/50">
-                          {unitLabel(it.unit)} ×{" "}
-                          {it.price != null ? formatBaht(it.price) : "฿—"}
-                        </span>
-                      </div>
-                      <div className="font-num flex items-center px-[13px] text-[14.5px] font-bold whitespace-nowrap text-accent">
-                        {it.subtotal ? formatBaht(it.subtotal) : "฿0"}
-                      </div>
+                      <input
+                        value={it.price}
+                        onChange={(e) => updateItemPrice(it.key, e.target.value)}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="font-num h-11 w-full border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
+                      />
                     </div>
-                    {errors.items[it.key] && (
-                      <div className="border-t border-ink/12 px-[13px] py-[9px] text-[11.5px] leading-[1.4] text-danger">
-                        {errors.items[it.key]}
-                      </div>
-                    )}
                   </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={addItem}
-                className="mt-3 flex min-h-12 w-full items-center gap-[9px] border border-accent bg-accent-100 px-3.5 text-[13px] font-semibold text-accent hover:bg-accent-200"
-              >
-                <Plus size={16} strokeWidth={2.2} />
-                เพิ่มสินค้าอีกรายการ
-              </button>
-            </>
-          )}
+                  {(rowErr?.quantity || rowErr?.price) && (
+                    <div className="border-b border-ink/12 px-[13px] py-[9px] text-[11.5px] leading-[1.4] text-danger">
+                      {[rowErr.quantity, rowErr.price].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end px-[13px] py-2">
+                    <span className="font-num text-[14.5px] font-bold text-ink/70">
+                      รวม {it.subtotal ? formatBaht(it.subtotal) : "฿0"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={addItem}
+            className={`mt-3 flex min-h-12 w-full items-center gap-[9px] border border-accent bg-accent-100 px-3.5 text-[13px] font-semibold text-accent hover:bg-accent-200`}
+          >
+            <Plus size={16} strokeWidth={2.2} />
+            เพิ่มสินค้าอีกรายการ
+          </button>
           {errors.itemsList && (
             <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
               {errors.itemsList}
@@ -499,17 +583,17 @@ export default function BillFormView({
           )}
         </div>
 
-        {/* 3. Customer name */}
+        {/* 3. Customer/party name */}
         <div className="relative">
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            3 · ชื่อลูกค้า <span className="text-accent">*</span>
+            3 · ชื่อ{config.partyLabel} <span className={config.color.text}>*</span>
           </label>
           <input
             value={customerName}
             onChange={(e) => handleCustomerNameChange(e.target.value)}
             onFocus={() => setShowCustomerSuggestions(!!customerName.trim())}
             onBlur={() => setShowCustomerSuggestions(false)}
-            placeholder="เช่น ร้านขนมป้ามาลี"
+            placeholder={`เช่น ร้านขนมป้ามาลี`}
             autoComplete="off"
             className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
           />
@@ -540,11 +624,14 @@ export default function BillFormView({
         {/* 4. Address */}
         <div>
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            4 · ที่อยู่จัดส่ง <span className="text-accent">*</span>
+            4 · ที่อยู่{config.partyLabel} <span className={config.color.text}>*</span>
           </label>
           <textarea
             value={customerAddress}
-            onChange={(e) => setCustomerAddress(e.target.value)}
+            onChange={(e) => {
+              setDirty(true);
+              setCustomerAddress(e.target.value);
+            }}
             rows={2}
             placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
             className="w-full resize-none border border-divider bg-bg px-[13px] py-3 text-[15px] leading-[1.5] outline-none"
@@ -555,16 +642,17 @@ export default function BillFormView({
                 <button
                   key={a.id}
                   type="button"
-                  onClick={() => setCustomerAddress(a.address)}
+                  onClick={() => {
+                    setDirty(true);
+                    setCustomerAddress(a.address);
+                  }}
                   className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-left text-[11.5px] leading-[1.4] ${
                     customerAddress === a.address
                       ? "border-accent bg-accent-100 text-accent"
                       : "border-divider bg-bg text-ink/65"
                   }`}
                 >
-                  <span className="max-w-[180px] truncate">
-                    {a.label || a.address}
-                  </span>
+                  <span className="max-w-[180px] truncate">{a.address}</span>
                   {a.isDefault && (
                     <span className="flex-none text-[9.5px] font-semibold uppercase opacity-75">
                       ค่าเริ่มต้น
@@ -584,11 +672,14 @@ export default function BillFormView({
         {/* 5. Phone */}
         <div>
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            5 · เบอร์โทรศัพท์
+            5 · เบอร์โทรศัพท์{config.partyLabel}
           </label>
           <input
             value={customerPhone}
-            onChange={(e) => setCustomerPhone(e.target.value)}
+            onChange={(e) => {
+              setDirty(true);
+              setCustomerPhone(e.target.value);
+            }}
             inputMode="tel"
             placeholder="เช่น 0812345678"
             autoComplete="off"
@@ -600,7 +691,10 @@ export default function BillFormView({
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => setCustomerPhone(p.phone)}
+                  onClick={() => {
+                    setDirty(true);
+                    setCustomerPhone(p.phone);
+                  }}
                   className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-[11.5px] leading-[1.4] ${
                     customerPhone === p.phone
                       ? "border-accent bg-accent-100 text-accent"
@@ -619,7 +713,7 @@ export default function BillFormView({
           )}
         </div>
 
-        {/* Discount / shipping */}
+        {/* Discount / shipping — used by both bill types */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
@@ -627,11 +721,19 @@ export default function BillFormView({
             </label>
             <input
               value={discount}
-              onChange={(e) => setDiscount(sanitizeNumberInput(e.target.value))}
+              onChange={(e) => {
+                setDirty(true);
+                setDiscount(sanitizeNumberInput(e.target.value));
+              }}
               inputMode="decimal"
               placeholder="0"
               className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
             />
+            {errors.discount && (
+              <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
+                {errors.discount}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
@@ -639,61 +741,63 @@ export default function BillFormView({
             </label>
             <input
               value={shippingFee}
-              onChange={(e) =>
-                setShippingFee(sanitizeNumberInput(e.target.value))
-              }
+              onChange={(e) => {
+                setDirty(true);
+                setShippingFee(sanitizeNumberInput(e.target.value));
+              }}
               inputMode="decimal"
               placeholder="0"
               className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
             />
+            {errors.shippingFee && (
+              <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
+                {errors.shippingFee}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Slip */}
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            สลิปโอนเงิน
-          </label>
-          {slipState.kind !== "none" ? (
-            <div className="flex items-stretch gap-3 border border-divider bg-bg p-2.5">
-              <div
-                className="h-[74px] w-[74px] flex-none border border-ink/15 bg-cover bg-center"
-                style={{
-                  backgroundImage: `url("${
-                    slipState.kind === "new"
-                      ? slipState.previewUrl
-                      : slipUrl(slipState.key)
-                  }")`,
-                }}
-              />
-              <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-                <div className="truncate text-[12.5px] leading-[1.35] font-semibold">
-                  {slipState.kind === "new" ? slipState.file.name : "สลิปเดิม"}
-                </div>
-                <button
-                  type="button"
-                  onClick={clearSlip}
-                  className="self-start border-0 bg-transparent p-0 text-[12px] font-semibold text-danger"
-                >
-                  ลบสลิป
-                </button>
-              </div>
-            </div>
-          ) : (
-            <label className="box-border flex cursor-pointer items-center gap-3 border border-dashed border-divider bg-bg px-3.5 py-[18px]">
-              <Upload size={20} strokeWidth={1.8} className="text-accent" />
-              <span className="text-[13px] font-semibold text-ink/60">
-                แนบรูปสลิป (ไม่บังคับ)
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleSlipChange(e.target.files?.[0] ?? null)}
-                className="hidden"
-              />
+        {/* Slip — create only; edit manages the slip from the detail page */}
+        {!isEditing && (
+          <div>
+            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
+              สลิปโอนเงิน
             </label>
-          )}
-        </div>
+            {slipFile ? (
+              <div className="flex items-stretch gap-3 border border-divider bg-bg p-2.5">
+                <div
+                  className="h-[74px] w-[74px] flex-none border border-ink/15 bg-cover bg-center"
+                  style={{ backgroundImage: `url("${slipPreviewUrl}")` }}
+                />
+                <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                  <div className="truncate text-[12.5px] leading-[1.35] font-semibold">
+                    {slipFile.name}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearSlip}
+                    className="self-start border-0 bg-transparent p-0 text-[12px] font-semibold text-danger"
+                  >
+                    ลบสลิป
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="box-border flex cursor-pointer items-center gap-3 border border-dashed border-divider bg-bg px-3.5 py-[18px]">
+                <Upload size={20} strokeWidth={1.8} className={config.color.text} />
+                <span className="text-[13px] font-semibold text-ink/60">
+                  แนบรูปสลิป (ไม่บังคับ)
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => handleSlipChange(e.target.files?.[0] ?? null)}
+                  className="hidden"
+                />
+              </label>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Summary */}
@@ -709,12 +813,6 @@ export default function BillFormView({
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
-            <span className="text-[12.5px] text-ink/60">น้ำหนักรวม</span>
-            <span className="font-num text-[14px] font-semibold">
-              {formatKg(kgTotal)}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
             <span className="text-[12.5px] text-ink/60">ยอดรวมสินค้า</span>
             <span className="font-num text-[14px] font-semibold">
               {itemsSubtotal ? formatBaht(itemsSubtotal) : "—"}
@@ -723,22 +821,27 @@ export default function BillFormView({
           <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
             <span className="text-[12.5px] text-ink/60">ส่วนลด</span>
             <span className="font-num text-[14px] font-semibold">
-              {discountNum ? `− ${formatBaht(discountNum)}` : "฿0"}
+              {toNumber(discount) ? `− ${formatBaht(discount)}` : "฿0"}
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-3.5 py-[11px]">
             <span className="text-[12.5px] text-ink/60">ค่าจัดส่ง</span>
             <span className="font-num text-[14px] font-semibold">
-              {shippingNum ? `+ ${formatBaht(shippingNum)}` : "฿0"}
+              {toNumber(shippingFee) ? `+ ${formatBaht(shippingFee)}` : "฿0"}
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-3.5 py-4">
             <span className="text-[14px] font-bold">ยอดสุทธิ</span>
-            <span className="font-num text-[26px] font-bold text-accent">
+            <span className={`font-num text-[26px] font-bold ${config.color.text}`}>
               {formatBaht(netTotal)}
             </span>
           </div>
         </div>
+        {netTotal < 0 && (
+          <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
+            ยอดสุทธิติดลบ — ส่วนลดมากกว่ายอดรวมสินค้ารวมค่าส่ง
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -749,22 +852,58 @@ export default function BillFormView({
           disabled={submitting}
           className="min-h-[52px] border border-divider bg-transparent px-[18px] text-[14px] font-semibold disabled:opacity-60"
         >
-          {isEditing ? "ยกเลิก" : "ล้าง"}
+          ยกเลิก
         </button>
         <button
           type="button"
           onClick={handleSubmit}
           disabled={submitting}
-          className="flex min-h-[52px] flex-1 items-center justify-center gap-2 bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-60"
+          className={`flex min-h-[52px] flex-1 items-center justify-center gap-2 px-4 text-[15px] font-semibold text-white disabled:opacity-60 ${config.color.bg}`}
         >
           {submitting
             ? "กำลังบันทึก…"
             : isEditing
-              ? "บันทึกการแก้ไข"
-              : "บันทึกบิล"}
+              ? config.editSubmitLabel
+              : config.submitLabel}
           <Check size={17} className="ml-auto" />
         </button>
       </div>
+
+      {/* Leave-without-saving confirm */}
+      {confirmLeaveOpen && (
+        <div
+          onClick={() => setConfirmLeaveOpen(false)}
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+          >
+            <h3 className="text-[20px] leading-[1.3] font-bold">
+              ยกเลิกบิลนี้?
+            </h3>
+            <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
+              ข้อมูลที่กรอกไว้จะหายไปทั้งหมด
+            </p>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmLeaveOpen(false)}
+                className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold"
+              >
+                กรอกต่อ
+              </button>
+              <button
+                type="button"
+                onClick={confirmLeave}
+                className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white"
+              >
+                ยกเลิกบิล
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

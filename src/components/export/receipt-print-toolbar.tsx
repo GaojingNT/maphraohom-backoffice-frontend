@@ -5,9 +5,11 @@ import Link from "next/link";
 import { ChevronLeft, Printer } from "lucide-react";
 
 export default function ReceiptPrintToolbar({
+  title,
   pagesLabel,
   slipUrls,
 }: {
+  title: string;
   pagesLabel: string;
   slipUrls: string[];
 }) {
@@ -48,7 +50,7 @@ export default function ReceiptPrintToolbar({
         ปิด
       </Link>
       <div className="min-w-0 flex-1 text-center text-[11.5px] leading-[1.3] font-semibold">
-        ใบเสร็จรับเงิน
+        {title}
         <div className="font-num text-[10px] font-medium opacity-70">
           {pagesLabel}
         </div>

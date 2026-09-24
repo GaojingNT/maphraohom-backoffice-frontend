@@ -2,8 +2,9 @@ import ThaiBahtText from "thai-baht-text";
 import ReceiptPrintToolbar from "@/components/export/receipt-print-toolbar";
 import { getBill } from "@/lib/api/bills";
 import { parseIds } from "@/lib/export/parse-ids";
-import { slipUrl } from "@/lib/slip-url";
-import { formatBaht, formatDateFull, formatKg } from "@/lib/format";
+import { formatBaht, formatDateFull, formatQuantity, formatQuantityByUnit } from "@/lib/format";
+import { toNumber } from "@/lib/money";
+import { BILL_TYPE_CONFIG } from "@/lib/bill-type";
 import type { Bill } from "@/lib/types";
 
 export default async function ExportReceiptPage({
@@ -23,10 +24,11 @@ export default async function ExportReceiptPage({
     );
 
   const receipts = bills.map((b) => {
-    const itemsTotal = b.items.reduce((a, it) => a + it.subtotal, 0);
-    const sumKgAll = b.items.reduce((a, it) => a + it.quantity, 0);
+    const config = BILL_TYPE_CONFIG[b.type];
+    const itemsTotal = b.items.reduce((a, it) => a + toNumber(it.subtotal), 0);
     return {
       id: b.id,
+      config,
       storeName: b.storeName || "—",
       bookNo: b.bookNo,
       receiptNo: b.receiptNo,
@@ -39,39 +41,44 @@ export default async function ExportReceiptPage({
         id: it.id,
         no: String(i + 1).padStart(2, "0"),
         productName: it.productName,
-        kgLabel: formatKg(it.quantity),
-        priceLabel: formatBaht(it.price),
+        quantityLabel: formatQuantity(it.quantity, it.unit),
+        priceLabel: `${formatBaht(it.price)}/${it.unit}`,
         subtotalLabel: formatBaht(it.subtotal),
       })),
       itemCountLabel: `${b.items.length} รายการ`,
-      sumKgLabel: formatKg(sumKgAll),
+      quantitySummary: formatQuantityByUnit(b.items),
       totals: [
         { label: "รวมราคาสินค้า", value: formatBaht(itemsTotal) },
         {
           label: "ส่วนลด",
-          value: b.discount ? `− ${formatBaht(b.discount)}` : "฿0",
+          value: toNumber(b.discount) ? `− ${formatBaht(b.discount)}` : "฿0",
         },
         {
           label: "ค่าจัดส่ง",
-          value: b.shippingFee ? `+ ${formatBaht(b.shippingFee)}` : "฿0",
+          value: toNumber(b.shippingFee) ? `+ ${formatBaht(b.shippingFee)}` : "฿0",
         },
       ],
       totalLabel: formatBaht(b.total),
       // Rounded to match formatBaht's whole-baht display elsewhere in the
       // app — otherwise the words could mention satang the number doesn't.
-      totalWords: ThaiBahtText(Math.round(b.total)),
-      slip: b.slip || null,
+      totalWords: ThaiBahtText(Math.round(toNumber(b.total))),
+      slipUrl: b.slipUrl,
     };
   });
 
   const slipUrls = receipts
-    .filter((r) => r.slip)
-    .map((r) => slipUrl(r.slip as string));
+    .map((r) => r.slipUrl)
+    .filter((u): u is string => !!u);
+
+  const documentTitles = [...new Set(receipts.map((r) => r.config.documentTitle))];
+  const toolbarTitle =
+    documentTitles.length === 1 ? documentTitles[0] : "เอกสารบิล";
 
   return (
     <div className="min-h-dvh bg-[#3d423e]">
       <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { background: #fff !important; } }`}</style>
       <ReceiptPrintToolbar
+        title={toolbarTitle}
         pagesLabel={`${receipts.length} ใบ · A4 แนวตั้ง`}
         slipUrls={slipUrls}
       />
@@ -104,10 +111,10 @@ export default async function ExportReceiptPage({
                   </div>
                   <div className="flex-none text-right">
                     <div className="text-[20px] leading-[1.2] font-bold">
-                      ใบเสร็จรับเงิน
+                      {rc.config.documentTitle}
                     </div>
                     <div className="font-num mt-[5px] text-[9px] leading-[1.3] tracking-[.12em] text-[#4a544d]">
-                      RECEIPT
+                      {rc.config.documentTitleEn}
                     </div>
                     <div className="font-num mt-3 text-right text-[9.5px] leading-[1.7]">
                       <div>
@@ -124,7 +131,7 @@ export default async function ExportReceiptPage({
                 <div className="grid grid-cols-[1fr_200px] gap-5 border-b border-[rgba(22,33,26,0.25)] py-3.5">
                   <div>
                     <div className="font-num text-[8.5px] leading-none tracking-[.16em] text-[#6b746d] uppercase">
-                      ได้รับเงินจาก
+                      {rc.config.counterpartyHeading}
                     </div>
                     <div className="mt-[7px] text-[13px] leading-[1.35] font-bold">
                       {rc.customerName}
@@ -135,7 +142,7 @@ export default async function ExportReceiptPage({
                   </div>
                   <div>
                     <div className="font-num text-[8.5px] leading-none tracking-[.16em] text-[#6b746d] uppercase">
-                      รหัสลูกค้า / รหัสบิล
+                      รหัส{rc.config.partyLabel} / รหัสบิล
                     </div>
                     <div className="font-num mt-[7px] text-[10.5px] leading-[1.6] font-semibold">
                       {rc.customerIdLabel}
@@ -151,10 +158,10 @@ export default async function ExportReceiptPage({
                     รายการ
                   </div>
                   <div className="border-l border-white/28 p-[7px_8px] text-right">
-                    น้ำหนัก
+                    จำนวน
                   </div>
                   <div className="border-l border-white/28 p-[7px_8px] text-right">
-                    ราคา/กก.
+                    ราคา/หน่วย
                   </div>
                   <div className="border-l border-white/28 p-[7px_8px] text-right">
                     จำนวนเงิน
@@ -172,7 +179,7 @@ export default async function ExportReceiptPage({
                       {it.productName}
                     </div>
                     <div className="font-num border-l border-[rgba(22,33,26,0.2)] p-[7px_8px] text-right text-[9.5px] leading-[1.4]">
-                      {it.kgLabel}
+                      {it.quantityLabel}
                     </div>
                     <div className="font-num border-l border-[rgba(22,33,26,0.2)] p-[7px_8px] text-right text-[9.5px] leading-[1.4]">
                       {it.priceLabel}
@@ -192,7 +199,8 @@ export default async function ExportReceiptPage({
                       {rc.totalWords}
                     </div>
                     <div className="mt-2.5 text-[8.5px] leading-[1.6] text-[#6b746d]">
-                      น้ำหนักรวม {rc.sumKgLabel} · {rc.itemCountLabel}
+                      {rc.quantitySummary ? `${rc.quantitySummary} · ` : ""}
+                      {rc.itemCountLabel}
                     </div>
                   </div>
                   <div>
@@ -209,7 +217,9 @@ export default async function ExportReceiptPage({
                         </span>
                       </div>
                     ))}
-                    <div className="mt-[7px] flex items-baseline justify-between gap-3.5 bg-accent px-2.5 py-[11px] text-white">
+                    <div
+                      className={`mt-[7px] flex items-baseline justify-between gap-3.5 px-2.5 py-[11px] text-white ${rc.config.color.bg}`}
+                    >
                       <span className="text-[10.5px] leading-[1.3] font-bold">
                         ยอดสุทธิ
                       </span>
@@ -232,7 +242,7 @@ export default async function ExportReceiptPage({
                   </div>
                 </div>
 
-                {rc.slip ? (
+                {rc.slipUrl ? (
                   <div className="mt-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3]">
                     {/* Print/Save-as-PDF drop CSS background-images unless
                         "Background graphics" is checked, so the slip is a
@@ -246,7 +256,7 @@ export default async function ExportReceiptPage({
                         page break after it. overflow-hidden here and on
                         the card above are a hard backstop either way. */}
                     <img
-                      src={slipUrl(rc.slip)}
+                      src={rc.slipUrl}
                       alt="สลิปโอนเงิน"
                       className="max-h-[100mm] max-w-full object-contain"
                     />
@@ -264,13 +274,13 @@ export default async function ExportReceiptPage({
                   <div className="text-center">
                     <div className="h-[34px] border-b border-[#16211a]" />
                     <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
-                      ผู้จ่ายเงิน
+                      {rc.config.signatureLabels[0]}
                     </div>
                   </div>
                   <div className="text-center">
                     <div className="h-[34px] border-b border-[#16211a]" />
                     <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
-                      ผู้รับเงิน / ผู้มีอำนาจลงนาม
+                      {rc.config.signatureLabels[1]}
                     </div>
                   </div>
                 </div>
