@@ -1,6 +1,18 @@
 import { API_BASE_URL } from "@/lib/api/config";
+import { resolveFileUrl } from "@/lib/slip-url";
 import type { BillType } from "@/lib/bill-type";
 import type { Bill, BillListItem } from "@/lib/types";
+
+// The backend returns slipUrl as a path relative to the API's own origin
+// (e.g. "/api/v1/files/slip/..."), not the frontend's — used as-is in an
+// <img>/background-image, the browser would resolve it against whatever
+// origin is serving the page instead (a silent 404 in production, where the
+// frontend and API are on different subdomains). Every response that can
+// carry a slipUrl is normalized here, once, so nothing downstream has to
+// remember to do it.
+function resolveBillSlipUrl(bill: Bill): Bill {
+  return bill.slipUrl ? { ...bill, slipUrl: resolveFileUrl(bill.slipUrl) } : bill;
+}
 
 // The list page filters/paginates client-side (matches the design
 // prototype), so we ask the backend for one large page instead of paging
@@ -58,7 +70,7 @@ export async function getBill(id: number): Promise<Bill> {
   if (!res.ok) {
     throw new Error(`GET /bills/${id} failed with status ${res.status}`);
   }
-  return res.json();
+  return resolveBillSlipUrl(await res.json());
 }
 
 export async function deleteBill(id: number): Promise<void> {
@@ -95,7 +107,7 @@ export async function createBill(input: CreateBillInput): Promise<Bill> {
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, "POST /bills failed");
-  return res.json();
+  return resolveBillSlipUrl(await res.json());
 }
 
 // storeId/type must match the bill being edited — the backend rejects a
@@ -112,7 +124,7 @@ export async function updateBill(
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, `PUT /bills/${id} failed`);
-  return res.json();
+  return resolveBillSlipUrl(await res.json());
 }
 
 // Slip is attached/replaced/removed through its own endpoints, independent
@@ -126,7 +138,7 @@ export async function uploadSlip(id: number, file: File): Promise<string> {
   });
   if (!res.ok) await throwApiError(res, "แนบสลิปไม่สำเร็จ");
   const body: { slipUrl: string } = await res.json();
-  return body.slipUrl;
+  return resolveFileUrl(body.slipUrl);
 }
 
 export async function deleteSlip(id: number): Promise<void> {
