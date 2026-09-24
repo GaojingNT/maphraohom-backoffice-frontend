@@ -12,6 +12,12 @@
   --divider-light: rgba(22, 33, 26, 0.13);
   --danger: #a3231a;
   --frame: #e7e9e5;
+  /* Payment-bill color — mirrors --accent's role but for บิลจ่ายเงิน
+     (receipt bills keep using the existing green --accent tokens). */
+  --payment: #c2570a;
+  --payment-100: #fdf1e6;
+  --payment-200: #f8dcc0;
+  --payment-soft: #e0a06b;
 }
 
 @theme inline {
@@ -26,6 +32,10 @@
   --color-divider-light: var(--divider-light);
   --color-danger: var(--danger);
   --color-frame: var(--frame);
+  --color-payment: var(--payment);
+  --color-payment-100: var(--payment-100);
+  --color-payment-200: var(--payment-200);
+  --color-payment-soft: var(--payment-soft);
   --font-heading: var(--font-noto-sans-thai), var(--font-archivo), system-ui,
     sans-serif;
   --font-num: var(--font-archivo), var(--font-noto-sans-thai), system-ui,

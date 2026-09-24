@@ -1,21 +1,8 @@
-import Link from "next/link";
-import { ChevronRight, Percent, Tag } from "lucide-react";
+import { Settings2 } from "lucide-react";
 
-const LINKS = [
-  {
-    href: "/admin/prices",
-    icon: Tag,
-    title: "จัดการราคา",
-    desc: "แก้ราคาต่อหน่วยของแต่ละสินค้า แยกตามสาขา",
-  },
-  {
-    href: "/admin/promotions",
-    icon: Percent,
-    title: "จัดการโปรโมชั่น",
-    desc: "ตั้งโปรราคาพิเศษตามช่วงเวลา แยกตามสาขา",
-  },
-];
-
+// Price-per-store and promotion management were removed — pricing is now
+// entered manually on every bill (see /create). This page is a placeholder
+// until there's another store-settings screen to put here.
 export default function AdminPage() {
   return (
     <div className="flex flex-1 flex-col pb-24">
@@ -28,25 +15,11 @@ export default function AdminPage() {
         </h1>
       </div>
 
-      <div className="flex flex-col">
-        {LINKS.map(({ href, icon: Icon, title, desc }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex items-center gap-3.5 border-b-2 border-divider bg-surface px-5 py-5"
-          >
-            <div className="flex h-11 w-11 flex-none items-center justify-center border border-divider bg-accent-100 text-accent">
-              <Icon size={19} strokeWidth={1.8} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-bold">{title}</div>
-              <div className="mt-0.5 text-[12px] leading-[1.5] text-ink/55">
-                {desc}
-              </div>
-            </div>
-            <ChevronRight size={18} className="flex-none text-ink/40" />
-          </Link>
-        ))}
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-ink/45">
+        <Settings2 size={28} strokeWidth={1.6} />
+        <p className="text-[13px] leading-[1.6] font-semibold">
+          ยังไม่มีรายการตั้งค่าในตอนนี้
+        </p>
       </div>
     </div>
   );
