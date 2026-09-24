@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import BillFormView from "@/components/bills/bill-form-view";
 import { getBill } from "@/lib/api/bills";
-import { getStoreProducts, getStores } from "@/lib/api/stores";
+import { getProducts } from "@/lib/api/products";
+import { getStores } from "@/lib/api/stores";
 
 export default async function EditBillPage(
   props: PageProps<"/bills/[id]/edit">,
@@ -17,16 +18,14 @@ export default async function EditBillPage(
     notFound();
   }
 
-  const [stores, initialProducts] = await Promise.all([
-    getStores(),
-    getStoreProducts(bill.storeId),
-  ]);
+  const [stores, products] = await Promise.all([getStores(), getProducts()]);
 
   return (
     <BillFormView
+      type={bill.type}
       stores={stores}
+      products={products}
       editingBill={bill}
-      initialProducts={initialProducts}
     />
   );
 }

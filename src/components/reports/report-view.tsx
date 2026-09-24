@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { formatBaht, formatDateShort, formatKg } from "@/lib/format";
+import { formatBaht, formatDateShort } from "@/lib/format";
+import { toNumber } from "@/lib/money";
+import { BILL_TYPE_CONFIG } from "@/lib/bill-type";
 import type { BillListItem, Store } from "@/lib/types";
 
 type Range = "7d" | "30d" | "1y";
@@ -20,6 +22,20 @@ const RANGE_LABEL: Record<Range, string> = {
 
 const DAY_MS = 86400000;
 
+// Splits a set of bills into income (receipt) / expense (payment) totals —
+// the two directions of money can never be summed together directly (spec:
+// "ห้าม SUM total ข้าม type ตรง ๆ").
+function incomeExpense(bills: BillListItem[]) {
+  let income = 0;
+  let expense = 0;
+  for (const b of bills) {
+    const amount = toNumber(b.total);
+    if (b.type === "receipt") income += amount;
+    else expense += amount;
+  }
+  return { income, expense, net: income - expense };
+}
+
 export default function ReportView({
   bills,
   stores,
@@ -36,9 +52,7 @@ export default function ReportView({
   const since = now - days * DAY_MS;
   const inRange = bills.filter((b) => new Date(b.createdAt).getTime() >= since);
 
-  const repTotal = inRange.reduce((a, b) => a + b.total, 0);
-  const repKg = inRange.reduce((a, b) => a + b.totalQuantity, 0);
-  const repAvg = inRange.length ? repTotal / inRange.length : 0;
+  const { income, expense, net } = incomeExpense(inRange);
 
   const bucketCount = range === "7d" ? 7 : range === "30d" ? 6 : 12;
   const bucketSpanDays = range === "7d" ? 1 : range === "30d" ? 5 : 30;
@@ -46,32 +60,30 @@ export default function ReportView({
   for (let i = bucketCount - 1; i >= 0; i--) {
     const end = now - i * bucketSpanDays * DAY_MS;
     const start = end - bucketSpanDays * DAY_MS;
-    const value = inRange
-      .filter((b) => {
-        const t = new Date(b.createdAt).getTime();
-        return t > start && t <= end;
-      })
-      .reduce((a, b) => a + b.total, 0);
+    const inBucket = inRange.filter((b) => {
+      const t = new Date(b.createdAt).getTime();
+      return t > start && t <= end;
+    });
+    const { income: bucketIncome, expense: bucketExpense } = incomeExpense(inBucket);
     buckets.push({
       label: formatDateShort(new Date(end).toISOString()),
-      short: value > 0 ? Math.round(value / 1000) + "k" : "",
-      value,
+      income: bucketIncome,
+      expense: bucketExpense,
     });
   }
-  const maxBucket = Math.max(1, ...buckets.map((b) => b.value));
+  const maxBucket = Math.max(1, ...buckets.map((b) => Math.max(b.income, b.expense)));
 
   const storeAgg = stores
     .map((store) => {
       const rows = inRange.filter((b) => b.storeId === store.id);
-      return {
-        name: store.name,
-        value: rows.reduce((a, b) => a + b.total, 0),
-        count: rows.length,
-        kg: rows.reduce((a, b) => a + b.totalQuantity, 0),
-      };
+      const agg = incomeExpense(rows);
+      return { name: store.name, count: rows.length, ...agg };
     })
-    .sort((a, b) => b.value - a.value);
-  const maxStore = Math.max(1, ...storeAgg.map((s) => s.value));
+    .sort((a, b) => b.net - a.net);
+  const maxStoreValue = Math.max(
+    1,
+    ...storeAgg.map((s) => Math.max(s.income, s.expense)),
+  );
 
   return (
     <div className="flex flex-1 flex-col pb-24">
@@ -101,72 +113,69 @@ export default function ReportView({
         ))}
       </div>
 
-      {/* Total block */}
-      <div className="border-b-2 border-divider bg-accent px-5 py-[22px] text-white">
+      {/* Income / expense / net block */}
+      <div className="border-b-2 border-divider bg-ink px-5 py-[22px] text-white">
         <div className="text-[10px] leading-none font-semibold tracking-[.18em] uppercase opacity-90">
-          รายได้รวม · {RANGE_LABEL[range]}
+          สรุป · {RANGE_LABEL[range]}
         </div>
-        <div className="font-num mt-3.5 text-[44px] leading-none font-bold tracking-[-.02em]">
-          {formatBaht(repTotal)}
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          <div>
+            <div className={`text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase ${BILL_TYPE_CONFIG.receipt.color.text}`}>
+              {BILL_TYPE_CONFIG.receipt.title}
+            </div>
+            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
+              {formatBaht(income)}
+            </div>
+          </div>
+          <div>
+            <div className={`text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase ${BILL_TYPE_CONFIG.payment.color.text}`}>
+              {BILL_TYPE_CONFIG.payment.title}
+            </div>
+            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
+              {formatBaht(expense)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9.5px] leading-none font-semibold tracking-[.12em] text-white/70 uppercase">
+              สุทธิ
+            </div>
+            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
+              {net < 0 ? "− " : ""}
+              {formatBaht(Math.abs(net))}
+            </div>
+          </div>
         </div>
-        <div className="mt-[18px] flex gap-6 border-t border-white/40 pt-[15px]">
-          <div>
-            <div className="font-num text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase opacity-90">
-              บิล
-            </div>
-            <div className="font-num mt-[7px] text-[18px] leading-[1.1] font-bold">
-              {inRange.length.toLocaleString("en-US")}
-            </div>
-          </div>
-          <div>
-            <div className="font-num text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase opacity-90">
-              น้ำหนัก
-            </div>
-            <div className="font-num mt-[7px] text-[18px] leading-[1.1] font-bold">
-              {formatKg(repKg)}
-            </div>
-          </div>
-          <div>
-            <div className="font-num text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase opacity-90">
-              เฉลี่ย/บิล
-            </div>
-            <div className="font-num mt-[7px] text-[18px] leading-[1.1] font-bold">
-              {formatBaht(repAvg)}
-            </div>
-          </div>
+        <div className="mt-4 border-t border-white/25 pt-3 text-[11px] leading-[1.4] opacity-80">
+          {inRange.length.toLocaleString("en-US")} บิล
         </div>
       </div>
 
       {/* Chart */}
       <div className="border-b-2 border-divider bg-surface px-5 py-5">
-        <div className="mb-5 flex items-baseline justify-between gap-3">
-          <div className="text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
-            รายได้ตามช่วงเวลา
-          </div>
-          <div className="font-num text-[11px] text-ink/50">
-            สูงสุด {formatBaht(maxBucket)}
-          </div>
+        <div className="mb-4 flex items-center justify-between gap-3 text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
+          <span>รับ/จ่ายตามช่วงเวลา</span>
+          <span className="flex items-center gap-3 normal-case">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 bg-accent" />รับเงิน
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 bg-payment" />จ่ายเงิน
+            </span>
+          </span>
         </div>
         <div className="flex h-[150px] items-end gap-1.5 border-b-2 border-divider">
           {buckets.map((b, i) => {
-            const h = Math.max(3, Math.round((b.value / maxBucket) * 120));
-            const fill =
-              b.value === maxBucket
-                ? "bg-accent"
-                : b.value === 0
-                  ? "bg-ink/10"
-                  : "bg-accent-soft";
+            const incomeH = Math.max(b.income > 0 ? 3 : 0, Math.round((b.income / maxBucket) * 120));
+            const expenseH = Math.max(b.expense > 0 ? 3 : 0, Math.round((b.expense / maxBucket) * 120));
             return (
-              <div
-                key={i}
-                className="flex h-full min-w-0 flex-1 flex-col justify-end"
-              >
-                <div className="font-num mb-1.5 text-center text-[9px] text-ink/50">
-                  {b.short}
-                </div>
+              <div key={i} className="flex h-full min-w-0 flex-1 items-end gap-[2px]">
                 <div
-                  className={`transition-[height] duration-[350ms] ease-in-out ${fill}`}
-                  style={{ height: `${h}px` }}
+                  className="min-w-0 flex-1 bg-accent transition-[height] duration-[350ms] ease-in-out"
+                  style={{ height: `${incomeH}px` }}
+                />
+                <div
+                  className="min-w-0 flex-1 bg-payment transition-[height] duration-[350ms] ease-in-out"
+                  style={{ height: `${expenseH}px` }}
                 />
               </div>
             );
@@ -194,27 +203,36 @@ export default function ReportView({
             <div key={s.name}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[14px] font-semibold">{s.name}</span>
-                <span className="font-num text-[15px] font-bold">
-                  {formatBaht(s.value)}
+                <span className="font-num text-[13px] text-ink/55">
+                  {s.count} บิล
                 </span>
               </div>
-              <div className="mt-[9px] h-2.5 bg-ink/10">
-                <div
-                  className={`h-full transition-[width] duration-[400ms] ease-in-out ${
-                    s.value === maxStore ? "bg-accent" : "bg-accent-soft"
-                  }`}
-                  style={{
-                    width: `${Math.round((s.value / maxStore) * 100)}%`,
-                  }}
-                />
-              </div>
-              <div className="mt-1.5 flex justify-between text-[10.5px] text-ink/50">
-                <span>
-                  {s.count} บิล · {formatKg(s.kg)}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="w-9 flex-none text-[9.5px] font-semibold text-accent">
+                  รับ
                 </span>
-                <span>
-                  {repTotal ? Math.round((s.value / repTotal) * 100) : 0}%
-                  ของยอดรวม
+                <div className="h-2.5 flex-1 bg-ink/10">
+                  <div
+                    className="h-full bg-accent transition-[width] duration-[400ms] ease-in-out"
+                    style={{ width: `${Math.round((s.income / maxStoreValue) * 100)}%` }}
+                  />
+                </div>
+                <span className="font-num w-20 flex-none text-right text-[11px] font-semibold">
+                  {formatBaht(s.income)}
+                </span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="w-9 flex-none text-[9.5px] font-semibold text-payment">
+                  จ่าย
+                </span>
+                <div className="h-2.5 flex-1 bg-ink/10">
+                  <div
+                    className="h-full bg-payment transition-[width] duration-[400ms] ease-in-out"
+                    style={{ width: `${Math.round((s.expense / maxStoreValue) * 100)}%` }}
+                  />
+                </div>
+                <span className="font-num w-20 flex-none text-right text-[11px] font-semibold">
+                  {formatBaht(s.expense)}
                 </span>
               </div>
             </div>
