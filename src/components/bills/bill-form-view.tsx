@@ -20,7 +20,7 @@ import {
 } from "@/lib/api/customers";
 import type { ProductListItem } from "@/lib/api/products";
 import { getLastPrices } from "@/lib/api/stores";
-import { formatBaht, priceFieldLabel, quantityFieldLabel } from "@/lib/format";
+import { formatBaht, priceFieldLabel, quantityFieldLabel, toDatetimeLocalValue } from "@/lib/format";
 import { subtotalBaht, toNumber, totalBaht } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
@@ -123,6 +123,10 @@ export default function BillFormView({
   const [storeId, setStoreId] = useState<number | null>(
     editingBill?.storeId ?? null,
   );
+  // Create only — prefilled with "now" so the common case needs no input,
+  // but editable for entering a bill that actually happened earlier.
+  // Edit doesn't touch createdAt at all (not sent in that payload branch).
+  const [createdAt, setCreatedAt] = useState(() => toDatetimeLocalValue(new Date()));
   const [customerId, setCustomerId] = useState<number | undefined>(
     editingBill?.customerId,
   );
@@ -381,6 +385,13 @@ export default function BillFormView({
       discount: discount || "0",
       shippingFee: shippingFee || "0",
       items: itemInputs,
+      // Edit never sends this — the backend ignores it on PUT anyway, but
+      // omitting it here makes that explicit. An emptied/invalid picker
+      // just falls back to the backend's own "now" default rather than
+      // sending a bad date.
+      ...(!editingBill && createdAt && !Number.isNaN(new Date(createdAt).getTime())
+        ? { createdAt: new Date(createdAt).toISOString() }
+        : {}),
     };
 
     setSubmitting(true);
@@ -433,6 +444,29 @@ export default function BillFormView({
       </div>
 
       <div className="flex flex-col gap-[22px] border-b-2 border-divider bg-surface p-5">
+        {/* Created-at — create only; prefilled with now, editable for a
+            bill entered after the fact. Not part of the numbered sequence
+            below since it's document metadata, not a required decision. */}
+        {!isEditing && (
+          <div>
+            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
+              เวลาที่สร้างบิล
+            </label>
+            <input
+              type="datetime-local"
+              value={createdAt}
+              onChange={(e) => {
+                setDirty(true);
+                setCreatedAt(e.target.value);
+              }}
+              className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
+            />
+            <div className="mt-[7px] text-[11.5px] leading-[1.5] text-ink/50">
+              ค่าเริ่มต้นคือเวลาปัจจุบัน — แก้ไขได้ถ้ากรอกบิลย้อนหลัง
+            </div>
+          </div>
+        )}
+
         {/* 1. Store */}
         <div>
           <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">

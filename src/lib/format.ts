@@ -62,3 +62,15 @@ export function quantityFieldLabel(unit: string): string {
 export function priceFieldLabel(unit: string): string {
   return `ราคา/${unit}`;
 }
+
+// Formats a Date as the value a <input type="datetime-local"> wants
+// ("YYYY-MM-DDTHH:mm", always in the browser's local time — no timezone
+// suffix) — used to prefill the create-bill form's editable "เวลาที่สร้างบิล"
+// with the current moment.
+export function toDatetimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
