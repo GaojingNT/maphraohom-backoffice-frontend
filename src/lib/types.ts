@@ -1,10 +1,16 @@
 import type { BillType } from "@/lib/bill-type";
 
-// Shape returned by GET /stores — see responses.StoreListItem.
+// Shape returned by GET /stores — see responses.StoreListItem. GET
+// /stores/:id and PUT /stores/:id return the fuller StoreDetailResponse
+// (signature/address/phone included); the list endpoint's items simply
+// don't set those fields, so they come through as undefined.
 export interface Store {
   id: number;
   name: string;
   logo: string;
+  signature?: string;
+  address?: string;
+  phone?: string;
 }
 
 export interface BillItem {
