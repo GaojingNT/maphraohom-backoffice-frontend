@@ -42,7 +42,7 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
       });
       setStore(updated);
       showToast("บันทึกข้อมูลร้านแล้ว");
-      router.push("/admin");
+      router.push("/admin/store");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
     } finally {
@@ -54,7 +54,7 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
     <div className="flex flex-1 flex-col pb-28 [animation:riseIn_0.22s_ease_both]">
       <div className="border-b-2 border-divider bg-surface px-5 pt-4 pb-[18px]">
         <Link
-          href="/admin"
+          href="/admin/store"
           className="flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold text-accent"
         >
           <ChevronLeft size={16} />
@@ -136,7 +136,7 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
 
       <div className="flex gap-2.5 px-5 py-3.5">
         <Link
-          href="/admin"
+          href="/admin/store"
           className="flex min-h-[52px] items-center border border-divider bg-transparent px-[18px] text-[14px] font-semibold"
         >
           ยกเลิก
