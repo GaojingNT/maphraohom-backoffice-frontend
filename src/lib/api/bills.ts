@@ -98,6 +98,10 @@ export interface CreateBillInput {
   discount: string;
   shippingFee: string;
   items: BillItemInput[];
+  // ISO string to back-/post-date the bill — create only (the backend
+  // ignores it on PUT /bills/:id, so UpdateBillInput never sets it).
+  // Omitted -> the backend defaults to now.
+  createdAt?: string;
 }
 
 export async function createBill(input: CreateBillInput): Promise<Bill> {
