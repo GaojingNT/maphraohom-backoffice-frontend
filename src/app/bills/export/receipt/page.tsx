@@ -109,7 +109,7 @@ export default async function ExportReceiptPage({
                       <img
                         src={rc.storeLogo}
                         alt={rc.storeName}
-                        className="h-[50px] w-[50px] flex-none border border-[rgba(22,33,26,0.18)] object-contain"
+                        className="h-[60px] w-[60px] flex-none object-contain"
                       />
                     )}
                     <div>
@@ -305,10 +305,10 @@ export default async function ExportReceiptPage({
                       <img
                         src={rc.storeSignature}
                         alt="ลายเซ็น"
-                        className="mx-auto h-[42px] object-contain"
+                        className="mx-auto h-[50px] max-w-[200px] object-contain"
                       />
                     ) : (
-                      <div className="h-[42px]" />
+                      <div className="h-[50px]" />
                     )}
                     <div className="border-b border-[#16211a]" />
                     <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
