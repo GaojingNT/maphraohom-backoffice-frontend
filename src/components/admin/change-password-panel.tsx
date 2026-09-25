@@ -1,11 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { ChevronRight, KeyRound } from "lucide-react";
 import { changePasswordAction } from "@/app/actions/auth";
 import { useToast } from "@/components/toast-provider";
 import PasswordInput from "@/components/password-input";
+import OverlayPortal from "@/components/overlay-portal";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -97,11 +97,8 @@ export default function ChangePasswordPanel({ email }: { email: string }) {
         </button>
       </div>
 
-      {/* Portaled to <body>: the edit page's wrapper animates with a
-      transform, which would otherwise trap this fixed overlay inside the
-      page column and under the (fixed) bottom nav. */}
-      {open &&
-        createPortal(
+      {open && (
+        <OverlayPortal>
           <div
             onClick={closeDialog}
             onKeyDown={(e) => {
@@ -203,9 +200,9 @@ export default function ChangePasswordPanel({ email }: { email: string }) {
                 </button>
               </div>
             </form>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </OverlayPortal>
+      )}
     </>
   );
 }

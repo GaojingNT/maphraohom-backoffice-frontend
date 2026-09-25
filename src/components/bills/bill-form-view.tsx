@@ -25,6 +25,7 @@ import { subtotalBaht, toNumber, totalBaht } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
 import type { Bill, Store } from "@/lib/types";
+import OverlayPortal from "@/components/overlay-portal";
 
 const BOTTLE_UNIT = "ขวด";
 
@@ -905,38 +906,40 @@ export default function BillFormView({
 
       {/* Leave-without-saving confirm */}
       {confirmLeaveOpen && (
-        <div
-          onClick={() => setConfirmLeaveOpen(false)}
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
-        >
+        <OverlayPortal>
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+            onClick={() => setConfirmLeaveOpen(false)}
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
           >
-            <h3 className="text-[20px] leading-[1.3] font-bold">
-              ยกเลิกบิลนี้?
-            </h3>
-            <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
-              ข้อมูลที่กรอกไว้จะหายไปทั้งหมด
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setConfirmLeaveOpen(false)}
-                className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold"
-              >
-                กรอกต่อ
-              </button>
-              <button
-                type="button"
-                onClick={confirmLeave}
-                className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white"
-              >
-                ยกเลิกบิล
-              </button>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+            >
+              <h3 className="text-[20px] leading-[1.3] font-bold">
+                ยกเลิกบิลนี้?
+              </h3>
+              <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
+                ข้อมูลที่กรอกไว้จะหายไปทั้งหมด
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmLeaveOpen(false)}
+                  className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold"
+                >
+                  กรอกต่อ
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmLeave}
+                  className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white"
+                >
+                  ยกเลิกบิล
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </div>
   );

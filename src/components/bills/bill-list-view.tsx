@@ -19,6 +19,7 @@ import { formatBaht, formatDateShort } from "@/lib/format";
 import { toNumber } from "@/lib/money";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
 import type { BillListItem } from "@/lib/types";
+import OverlayPortal from "@/components/overlay-portal";
 
 const PAGE_SIZE = 8;
 
@@ -626,67 +627,69 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
 
       {/* Export bottom sheet */}
       {exportSheetOpen && (
-        <div
-          onClick={() => setExportSheetOpen(false)}
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
-        >
+        <OverlayPortal>
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+            onClick={() => setExportSheetOpen(false)}
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
           >
-            <div className="text-[10px] font-semibold tracking-[.18em] text-accent uppercase">
-              EXPORT · A4 แนวตั้ง
-            </div>
-            <h3 className="mt-2 text-[20px] leading-[1.3] font-bold">
-              เลือกรูปแบบเอกสาร
-            </h3>
-            <p className="mt-1.5 text-[12.5px] text-ink/55">
-              เลือกไว้ {selectedCount} บิล · {formatBaht(selectedTotal)}
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handlePickSummaryDoc}
-                className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
-              >
-                <FileText size={20} className="flex-none text-accent" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[14px] font-semibold">
-                    เอกสารสรุปสินค้า
-                  </div>
-                  <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
-                    ตารางรวมทุกบิลที่เลือก +
-                    สรุปน้ำหนักต่อสินค้าและยอดรวมท้ายตาราง
-                  </div>
-                </div>
-                <ChevronRight size={16} className="flex-none text-ink/35" />
-              </button>
-              <button
-                type="button"
-                onClick={handlePickReceiptDoc}
-                className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
-              >
-                <Receipt size={20} className="flex-none text-accent" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[14px] font-semibold">
-                    ใบเสร็จรับเงิน
-                  </div>
-                  <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
-                    หนึ่งใบต่อหนึ่งบิล · ครึ่งบนข้อมูลบิล ครึ่งล่างสลิปโอนเงิน
-                  </div>
-                </div>
-                <ChevronRight size={16} className="flex-none text-ink/35" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setExportSheetOpen(false)}
-              className="mt-4 min-h-[50px] w-full border border-divider bg-transparent text-[14px] font-semibold"
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
             >
-              ยกเลิก
-            </button>
+              <div className="text-[10px] font-semibold tracking-[.18em] text-accent uppercase">
+                EXPORT · A4 แนวตั้ง
+              </div>
+              <h3 className="mt-2 text-[20px] leading-[1.3] font-bold">
+                เลือกรูปแบบเอกสาร
+              </h3>
+              <p className="mt-1.5 text-[12.5px] text-ink/55">
+                เลือกไว้ {selectedCount} บิล · {formatBaht(selectedTotal)}
+              </p>
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={handlePickSummaryDoc}
+                  className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
+                >
+                  <FileText size={20} className="flex-none text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold">
+                      เอกสารสรุปสินค้า
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
+                      ตารางรวมทุกบิลที่เลือก +
+                      สรุปน้ำหนักต่อสินค้าและยอดรวมท้ายตาราง
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="flex-none text-ink/35" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePickReceiptDoc}
+                  className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
+                >
+                  <Receipt size={20} className="flex-none text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold">
+                      ใบเสร็จรับเงิน
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
+                      หนึ่งใบต่อหนึ่งบิล · ครึ่งบนข้อมูลบิล ครึ่งล่างสลิปโอนเงิน
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="flex-none text-ink/35" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExportSheetOpen(false)}
+                className="mt-4 min-h-[50px] w-full border border-divider bg-transparent text-[14px] font-semibold"
+              >
+                ยกเลิก
+              </button>
+            </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </div>
   );
