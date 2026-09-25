@@ -334,7 +334,7 @@ export default async function ExportReceiptPage({
                     full name centered under the signature. No image → blank
                     space for a physical signature. */}
                     <div className="mt-[22px] flex justify-end">
-                      <div className="grid grid-cols-[auto_200px] items-center gap-x-3">
+                      <div className="grid grid-cols-[auto_auto] items-center gap-x-2">
                         <div className="text-[9px] leading-[1.4] text-[#4a544d]">
                           {rc.config.signatureLabels[1]}
                         </div>
@@ -342,10 +342,10 @@ export default async function ExportReceiptPage({
                           <img
                             src={signerSignature}
                             alt="ลายเซ็น"
-                            className="mx-auto h-[50px] max-w-[200px] object-contain"
+                            className="h-[50px] w-auto max-w-[200px] justify-self-center object-contain"
                           />
                         ) : (
-                          <div className="h-[50px]" />
+                          <div className="h-[50px] w-[140px]" />
                         )}
                         {signerName && (
                           <div className="col-start-2 mt-[5px] text-center text-[9.5px] leading-[1.4] font-semibold">
