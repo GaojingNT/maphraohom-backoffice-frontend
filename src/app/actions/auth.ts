@@ -6,10 +6,12 @@ import { revalidatePath } from "next/cache";
 import {
   AuthApiError,
   authErrorMessage,
+  changePassword,
   deleteSignature,
   signIn,
   updateProfile,
   uploadSignature,
+  type ChangePasswordInput,
   type UpdateProfileInput,
 } from "@/lib/api/auth";
 import { SESSION_COOKIE, safeNextPath } from "@/lib/auth/constants";
@@ -118,5 +120,24 @@ export async function deleteSignatureAction(): Promise<ActionResult> {
     return { ok: false, error: authErrorMessage(err, "ลบลายเซ็นไม่สำเร็จ") };
   }
   revalidatePath("/admin/profile");
+  return { ok: true, data: undefined };
+}
+
+export async function changePasswordAction(
+  input: ChangePasswordInput,
+): Promise<ActionResult> {
+  if (input.newPassword.length < 8) {
+    return { ok: false, error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร" };
+  }
+  if (input.newPassword !== input.confirmPassword) {
+    return { ok: false, error: "รหัสผ่านใหม่กับยืนยันรหัสผ่านไม่ตรงกัน" };
+  }
+  const token = await requireSessionToken();
+  try {
+    await changePassword(token, input);
+  } catch (err) {
+    redirectIfUnauthorized(err);
+    return { ok: false, error: authErrorMessage(err, "เปลี่ยนรหัสผ่านไม่สำเร็จ") };
+  }
   return { ok: true, data: undefined };
 }

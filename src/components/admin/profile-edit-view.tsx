@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/auth";
 import { useToast } from "@/components/toast-provider";
 import ImageUploadPanel from "@/components/admin/image-upload-panel";
+import ChangePasswordPanel from "@/components/admin/change-password-panel";
 import type { Profile } from "@/lib/types";
 
 // Loose on purpose — the backend's validator is the real check; this only
@@ -190,6 +191,8 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
           <Check size={17} className="ml-auto" />
         </button>
       </div>
+
+      <ChangePasswordPanel email={profile.email} />
     </div>
   );
 }
