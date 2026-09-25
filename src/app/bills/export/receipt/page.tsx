@@ -329,30 +329,29 @@ export default async function ExportReceiptPage({
                     )}
 
                     {/* Only the issuer signs — the counterparty isn't expected
-                    to co-sign a printed receipt/voucher. Label on the left,
-                    its bottom lined up with the bottom of the signed-in user's
-                    signature image (as if signed on the same line); their
-                    full name centered under the signature. No image → blank
-                    space for a physical signature. */}
+                    to co-sign a printed receipt/voucher. One centered stack:
+                    the signed-in user's signature, their full name, then the
+                    role label. No image → blank space for a physical
+                    signature; no name → the label moves up. */}
                     <div className="mt-[22px] flex justify-end">
-                      <div className="grid grid-cols-[auto_auto] items-end gap-x-2">
-                        <div className="text-[9px] leading-[1.4] text-[#4a544d]">
-                          {rc.config.signatureLabels[1]}
-                        </div>
+                      <div className="flex flex-col items-center text-center">
                         {signerSignature ? (
                           <img
                             src={signerSignature}
                             alt="ลายเซ็น"
-                            className="h-[50px] w-auto max-w-[200px] justify-self-center object-contain"
+                            className="h-[50px] w-auto max-w-[200px] object-contain"
                           />
                         ) : (
                           <div className="h-[50px] w-[140px]" />
                         )}
                         {signerName && (
-                          <div className="col-start-2 mt-[5px] text-center text-[9.5px] leading-[1.4] font-semibold">
+                          <div className="mt-[5px] text-[9.5px] leading-[1.4] font-semibold">
                             {signerName}
                           </div>
                         )}
+                        <div className="mt-[3px] text-[9px] leading-[1.4] text-[#4a544d]">
+                          {rc.config.signatureLabels[1]}
+                        </div>
                       </div>
                     </div>
                   </div>
