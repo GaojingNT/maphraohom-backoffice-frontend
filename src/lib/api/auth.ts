@@ -90,6 +90,24 @@ export async function updateProfile(
   return normalizeProfile(await res.json());
 }
 
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export async function changePassword(
+  token: string,
+  input: ChangePasswordInput,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/auth/profile/password`, {
+    method: "PUT",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) await throwAuthApiError(res, "เปลี่ยนรหัสผ่านไม่สำเร็จ");
+}
+
 // The signature is attached/replaced/removed through its own endpoints,
 // independent of updating name/email — same split as a store's logo.
 export async function uploadSignature(token: string, file: File): Promise<string> {
@@ -121,6 +139,10 @@ export function authErrorMessage(err: unknown, fallback: string): string {
         return "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
       case "A-3003":
         return "อีเมลนี้มีผู้ใช้อื่นใช้อยู่แล้ว";
+      case "A-3004":
+        return "รหัสผ่านปัจจุบันไม่ถูกต้อง";
+      case "A-3005":
+        return "รหัสผ่านใหม่กับยืนยันรหัสผ่านไม่ตรงกัน";
       case "T-2004":
         return "กรอกข้อมูลให้ถูกต้อง";
       case "STORE-1001":
