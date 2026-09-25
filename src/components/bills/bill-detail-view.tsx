@@ -11,6 +11,7 @@ import { toNumber } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
 import SlipPanel from "@/components/bills/slip-panel";
 import type { Bill } from "@/lib/types";
+import OverlayPortal from "@/components/overlay-portal";
 
 export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
   const router = useRouter();
@@ -188,35 +189,37 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
 
       {/* Delete confirm dialog */}
       {confirmDeleteOpen && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]">
-          <div className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]">
-            <h3 className="text-[20px] leading-[1.3] font-bold">
-              ลบบิล {bill.receiptNo}?
-            </h3>
-            <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
-              บิลของ {bill.customerName} ยอด {formatBaht(bill.total)}{" "}
-              จะถูกลบออกจากรายการ
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteOpen(false)}
-                disabled={deleting}
-                className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold disabled:opacity-60"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white disabled:opacity-60"
-              >
-                {deleting ? "กำลังลบ…" : "ลบบิล"}
-              </button>
+        <OverlayPortal>
+          <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]">
+            <div className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]">
+              <h3 className="text-[20px] leading-[1.3] font-bold">
+                ลบบิล {bill.receiptNo}?
+              </h3>
+              <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
+                บิลของ {bill.customerName} ยอด {formatBaht(bill.total)}{" "}
+                จะถูกลบออกจากรายการ
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteOpen(false)}
+                  disabled={deleting}
+                  className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold disabled:opacity-60"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white disabled:opacity-60"
+                >
+                  {deleting ? "กำลังลบ…" : "ลบบิล"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </>
   );

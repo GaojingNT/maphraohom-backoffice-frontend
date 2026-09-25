@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { ArrowRight } from "lucide-react";
 import { signInAction, type SignInState } from "@/app/actions/auth";
+import PasswordInput from "@/components/password-input";
 
 const INITIAL_STATE: SignInState = {};
 
@@ -46,13 +47,11 @@ export default function LoginForm({ next }: { next: string }) {
         >
           รหัสผ่าน
         </label>
-        <input
+        <PasswordInput
           id="login-password"
           name="password"
-          type="password"
           required
           autoComplete="current-password"
-          className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
         />
       </div>
 

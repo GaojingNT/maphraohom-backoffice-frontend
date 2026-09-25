@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ImageIcon, X } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
+import OverlayPortal from "@/components/overlay-portal";
 
 // Generic attach/change/remove panel for a single image field — the same
 // shape as bills/slip-panel.tsx, generalized so it can back a store's logo
@@ -115,64 +116,68 @@ export default function ImageUploadPanel({
       </div>
 
       {lightboxOpen && imageUrl && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          className="fixed inset-0 z-[60] flex flex-col bg-[rgba(10,16,12,0.94)] [animation:fadeIn_0.18s_ease_both]"
-        >
-          <div className="flex items-center justify-between px-[18px] py-4 text-white">
-            <div className="text-[12px] font-semibold">{label}</div>
-            <button
-              type="button"
-              onClick={() => setLightboxOpen(false)}
-              className="flex h-11 w-11 items-center justify-center border border-white/35 bg-transparent text-white"
-            >
-              <X size={18} />
-            </button>
+        <OverlayPortal>
+          <div
+            onClick={() => setLightboxOpen(false)}
+            className="fixed inset-0 z-[60] flex flex-col bg-[rgba(10,16,12,0.94)] [animation:fadeIn_0.18s_ease_both]"
+          >
+            <div className="flex items-center justify-between px-[18px] py-4 text-white">
+              <div className="text-[12px] font-semibold">{label}</div>
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="flex h-11 w-11 items-center justify-center border border-white/35 bg-transparent text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex flex-1 items-center justify-center px-4 pb-7">
+              <div
+                role="img"
+                aria-label={label}
+                className="h-full w-full bg-center bg-no-repeat"
+                style={{ backgroundImage: `url("${imageUrl}")`, backgroundSize: "contain" }}
+              />
+            </div>
           </div>
-          <div className="flex flex-1 items-center justify-center px-4 pb-7">
-            <div
-              role="img"
-              aria-label={label}
-              className="h-full w-full bg-center bg-no-repeat"
-              style={{ backgroundImage: `url("${imageUrl}")`, backgroundSize: "contain" }}
-            />
-          </div>
-        </div>
+        </OverlayPortal>
       )}
 
       {confirmRemoveOpen && (
-        <div
-          onClick={() => setConfirmRemoveOpen(false)}
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
-        >
+        <OverlayPortal>
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+            onClick={() => setConfirmRemoveOpen(false)}
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
           >
-            <h3 className="text-[20px] leading-[1.3] font-bold">ลบ{label}นี้?</h3>
-            <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
-              ต้องอัปโหลดใหม่ภายหลังถ้าต้องการ
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setConfirmRemoveOpen(false)}
-                disabled={busy}
-                className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold disabled:opacity-60"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleRemove}
-                disabled={busy}
-                className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white disabled:opacity-60"
-              >
-                {busy ? "กำลังลบ…" : "ลบรูป"}
-              </button>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+            >
+              <h3 className="text-[20px] leading-[1.3] font-bold">ลบ{label}นี้?</h3>
+              <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
+                ต้องอัปโหลดใหม่ภายหลังถ้าต้องการ
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemoveOpen(false)}
+                  disabled={busy}
+                  className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold disabled:opacity-60"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  disabled={busy}
+                  className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white disabled:opacity-60"
+                >
+                  {busy ? "กำลังลบ…" : "ลบรูป"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </>
   );

@@ -159,6 +159,8 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
           )}
         </div>
 
+        <ChangePasswordPanel email={profile.email} />
+
         <div>
           <ImageUploadPanel
             label="ลายเซ็น"
@@ -191,8 +193,6 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
           <Check size={17} className="ml-auto" />
         </button>
       </div>
-
-      <ChangePasswordPanel email={profile.email} />
     </div>
   );
 }
