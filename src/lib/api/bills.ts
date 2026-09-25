@@ -1,25 +1,10 @@
-import { API_BASE_URL } from "@/lib/api/config";
-import { resolveFileUrl } from "@/lib/slip-url";
+import { apiFetch } from "@/lib/api/fetch";
 import type { BillType } from "@/lib/bill-type";
 import type { Bill, BillListItem } from "@/lib/types";
 
-// The backend returns slipUrl/storeLogo/storeSignature as paths relative to
-// the API's own origin (e.g. "/api/v1/files/slip/..."), not the frontend's —
-// used as-is in an <img>/background-image, the browser would resolve them
-// against whatever origin is serving the page instead (a silent 404 in
-// production, where the frontend and API are on different subdomains).
-// Every response that can carry these is normalized here, once, so nothing
-// downstream has to remember to do it.
-function resolveBillFileUrls(bill: Bill): Bill {
-  return {
-    ...bill,
-    slipUrl: bill.slipUrl ? resolveFileUrl(bill.slipUrl) : bill.slipUrl,
-    storeLogo: bill.storeLogo ? resolveFileUrl(bill.storeLogo) : bill.storeLogo,
-    storeSignature: bill.storeSignature
-      ? resolveFileUrl(bill.storeSignature)
-      : bill.storeSignature,
-  };
-}
+// slipUrl/storeLogo come back as "/api/v1/files/..." paths. They're used
+// as-is: the browser resolves them against this app's origin, where
+// app/api/v1/[...path]/route.ts serves them with the session attached.
 
 // The list page filters/paginates client-side (matches the design
 // prototype), so we ask the backend for one large page instead of paging
@@ -60,7 +45,7 @@ async function throwApiError(res: Response, fallback: string): Promise<never> {
 }
 
 export async function getBills(): Promise<BillListItem[]> {
-  const res = await fetch(`${API_BASE_URL}/bills?limit=${LIST_FETCH_LIMIT}`, {
+  const res = await apiFetch(`/bills?limit=${LIST_FETCH_LIMIT}`, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -71,17 +56,17 @@ export async function getBills(): Promise<BillListItem[]> {
 }
 
 export async function getBill(id: number): Promise<Bill> {
-  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+  const res = await apiFetch(`/bills/${id}`, {
     cache: "no-store",
   });
   if (!res.ok) {
     throw new Error(`GET /bills/${id} failed with status ${res.status}`);
   }
-  return resolveBillFileUrls(await res.json());
+  return await res.json();
 }
 
 export async function deleteBill(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+  const res = await apiFetch(`/bills/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) await throwApiError(res, `DELETE /bills/${id} failed`);
@@ -112,13 +97,13 @@ export interface CreateBillInput {
 }
 
 export async function createBill(input: CreateBillInput): Promise<Bill> {
-  const res = await fetch(`${API_BASE_URL}/bills`, {
+  const res = await apiFetch(`/bills`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, "POST /bills failed");
-  return resolveBillFileUrls(await res.json());
+  return await res.json();
 }
 
 // storeId/type must match the bill being edited — the backend rejects a
@@ -129,13 +114,13 @@ export async function updateBill(
   id: number,
   input: UpdateBillInput,
 ): Promise<Bill> {
-  const res = await fetch(`${API_BASE_URL}/bills/${id}`, {
+  const res = await apiFetch(`/bills/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!res.ok) await throwApiError(res, `PUT /bills/${id} failed`);
-  return resolveBillFileUrls(await res.json());
+  return await res.json();
 }
 
 // Slip is attached/replaced/removed through its own endpoints, independent
@@ -143,17 +128,17 @@ export async function updateBill(
 export async function uploadSlip(id: number, file: File): Promise<string> {
   const form = new FormData();
   form.set("slip", file);
-  const res = await fetch(`${API_BASE_URL}/bills/${id}/slip`, {
+  const res = await apiFetch(`/bills/${id}/slip`, {
     method: "PUT",
     body: form,
   });
   if (!res.ok) await throwApiError(res, "แนบสลิปไม่สำเร็จ");
   const body: { slipUrl: string } = await res.json();
-  return resolveFileUrl(body.slipUrl);
+  return body.slipUrl;
 }
 
 export async function deleteSlip(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/bills/${id}/slip`, {
+  const res = await apiFetch(`/bills/${id}/slip`, {
     method: "DELETE",
   });
   if (!res.ok) await throwApiError(res, "ลบสลิปไม่สำเร็จ");

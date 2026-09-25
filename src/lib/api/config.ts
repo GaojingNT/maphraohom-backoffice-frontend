@@ -1,12 +1,12 @@
-// `API_BASE_URL` is read server-side; `NEXT_PUBLIC_API_BASE_URL` is the same
-// value exposed to the browser for client components that call the API
-// directly (e.g. the create-bill form). Next.js inlines unprefixed env vars
-// to "" in the client bundle, so this falls through correctly either way.
+// The backend's base URL, used only on the server: Server Components and
+// Server Actions call it directly, and the browser reaches it through this
+// app's own /api/v1/* route handler (see lib/api/fetch.ts), never directly —
+// every endpoint requires the session token, which lives in an httpOnly
+// cookie the browser's JS can't read.
 //
-// This must be HTTPS: the site is served over HTTPS, and browsers silently
-// block "mixed content" — a page fetching plain HTTP from client-side code
-// (e.g. handleStoreChange's product lookup) — so a bare http:// backend URL
-// here breaks every client-side API call with no visible error.
+// Read at runtime (not inlined at build time), so changing API_BASE_URL in
+// the container's env is enough. NEXT_PUBLIC_API_BASE_URL is still honored
+// as a fallback for existing deployments that only set that one.
 export const API_BASE_URL =
   process.env.API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||

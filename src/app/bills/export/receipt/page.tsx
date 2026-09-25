@@ -2,6 +2,7 @@ import ThaiBahtText from "thai-baht-text";
 import ReceiptPrintToolbar from "@/components/export/receipt-print-toolbar";
 import ResponsivePageScale from "@/components/export/responsive-page-scale";
 import { getBill } from "@/lib/api/bills";
+import { getCurrentProfile } from "@/lib/auth/session";
 import { parseIds } from "@/lib/export/parse-ids";
 import {
   formatBaht,
@@ -20,7 +21,16 @@ export default async function ExportReceiptPage({
 }) {
   const ids = parseIds((await searchParams).ids);
 
-  const results = await Promise.allSettled(ids.map((id) => getBill(id)));
+  // Every exported receipt is signed by whoever is exporting it — the
+  // signature belongs to the signed-in user, not the store.
+  const [profile, results] = await Promise.all([
+    getCurrentProfile(),
+    Promise.allSettled(ids.map((id) => getBill(id))),
+  ]);
+  const signerSignature = profile.signature || null;
+  const signerName = [profile.firstName, profile.lastName]
+    .filter(Boolean)
+    .join(" ");
   const bills = results
     .filter((r): r is PromiseFulfilledResult<Bill> => r.status === "fulfilled")
     .map((r) => r.value)
@@ -39,7 +49,6 @@ export default async function ExportReceiptPage({
       storeLogo: b.storeLogo || null,
       storeAddress: b.storeAddress || "",
       storePhone: b.storePhone || "",
-      storeSignature: b.storeSignature || null,
       bookNo: b.bookNo,
       receiptNo: b.receiptNo,
       billIdLabel: `#${b.id}`,
@@ -82,6 +91,12 @@ export default async function ExportReceiptPage({
   const slipUrls = receipts
     .map((r) => r.slipUrl)
     .filter((u): u is string => !!u);
+  // The toolbar holds the print button until these have loaded — the
+  // signature is on every page, so it has to be ready too.
+  const preloadUrls =
+    signerSignature && receipts.length > 0
+      ? [...slipUrls, signerSignature]
+      : slipUrls;
 
   const documentTitles = [
     ...new Set(receipts.map((r) => r.config.documentTitle)),
@@ -102,7 +117,7 @@ export default async function ExportReceiptPage({
       <ReceiptPrintToolbar
         title={toolbarTitle}
         pagesLabel={`${receipts.length} ใบ · A4 แนวตั้ง`}
-        slipUrls={slipUrls}
+        slipUrls={preloadUrls}
       />
       <div className="flex justify-center overflow-x-auto px-4 py-6 print:p-0">
         <ResponsivePageScale>
@@ -313,16 +328,16 @@ export default async function ExportReceiptPage({
                       </div>
                     )}
 
-                    {/* Only the issuing store's own signature line stays — the
-                    counterparty isn't expected to co-sign a printed
-                    receipt/voucher. Pre-filled with the store's saved
-                    signature image when it has one; falls back to a blank
-                    line for a physical signature otherwise. */}
+                    {/* Only the issuer's signature line stays — the counterparty
+                    isn't expected to co-sign a printed receipt/voucher.
+                    Pre-filled with the signed-in user's saved signature
+                    image when they have one; falls back to a blank line for
+                    a physical signature otherwise. */}
                     <div className="mt-[22px] flex justify-end">
                       <div className="w-[220px] text-center">
-                        {rc.storeSignature ? (
+                        {signerSignature ? (
                           <img
-                            src={rc.storeSignature}
+                            src={signerSignature}
                             alt="ลายเซ็น"
                             className="mx-auto h-[50px] max-w-[200px] object-contain"
                           />
@@ -330,6 +345,11 @@ export default async function ExportReceiptPage({
                           <div className="h-[50px]" />
                         )}
                         <div className="border-b border-[#16211a]" />
+                        {signerName && (
+                          <div className="mt-[5px] text-[9.5px] leading-[1.4] font-semibold">
+                            ( {signerName} )
+                          </div>
+                        )}
                         <div className="mt-[7px] text-[9px] leading-[1.4] text-[#4a544d]">
                           {rc.config.signatureLabels[1]}
                         </div>

@@ -45,7 +45,7 @@ export default async function StoreListPage() {
                 {store.name}
               </div>
               <div className="mt-0.5 text-[11.5px] text-ink/50">
-                แก้ไขชื่อ โลโก้ ลายเซ็น ที่อยู่ เบอร์โทร
+                แก้ไขชื่อ โลโก้ ที่อยู่ เบอร์โทร
               </div>
             </div>
             <ChevronRight size={16} className="flex-none text-ink/35" />
