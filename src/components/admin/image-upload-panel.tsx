@@ -6,7 +6,8 @@ import { useToast } from "@/components/toast-provider";
 
 // Generic attach/change/remove panel for a single image field — the same
 // shape as bills/slip-panel.tsx, generalized so it can back a store's logo
-// and signature too instead of duplicating the whole component per field.
+// and a user's signature too instead of duplicating the whole component per
+// field.
 export default function ImageUploadPanel({
   label,
   imageUrl,

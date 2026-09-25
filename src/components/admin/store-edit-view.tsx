@@ -4,13 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, ChevronLeft } from "lucide-react";
-import {
-  deleteLogo,
-  deleteSignature,
-  updateStore,
-  uploadLogo,
-  uploadSignature,
-} from "@/lib/api/stores";
+import { deleteLogo, updateStore, uploadLogo } from "@/lib/api/stores";
 import { useToast } from "@/components/toast-provider";
 import ImageUploadPanel from "@/components/admin/image-upload-panel";
 import type { Store } from "@/lib/types";
@@ -121,17 +115,38 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
           onChange={(logo) => setStore((s) => ({ ...s, logo: logo ?? "" }))}
           emptyLabel="แตะเพื่ออัปโหลดโลโก้"
         />
+      </div>
 
-        <ImageUploadPanel
-          label="ลายเซ็น"
-          imageUrl={store.signature || null}
-          onUpload={(file) => uploadSignature(store.id, file)}
-          onDelete={() => deleteSignature(store.id)}
-          onChange={(signature) =>
-            setStore((s) => ({ ...s, signature: signature ?? "" }))
-          }
-          emptyLabel="แตะเพื่ออัปโหลดลายเซ็น"
-        />
+      <div className="border-b-2 border-divider bg-surface px-5 py-[18px]">
+        <div className="mb-2.5 text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
+          เจ้าของร้าน
+        </div>
+        {store.owners && store.owners.length > 0 ? (
+          <ul className="flex flex-col">
+            {store.owners.map((owner) => {
+              const fullName = [owner.firstName, owner.lastName]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <li
+                  key={owner.id}
+                  className="border-t border-ink/13 py-2.5 first:border-t-0 first:pt-0"
+                >
+                  <div className="text-[14px] font-semibold">
+                    {fullName || owner.email}
+                  </div>
+                  {fullName && (
+                    <div className="mt-0.5 text-[11.5px] text-ink/50">
+                      {owner.email}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="text-[13px] text-ink/50">ยังไม่มีเจ้าของร้าน</div>
+        )}
       </div>
 
       <div className="flex gap-2.5 px-5 py-3.5">

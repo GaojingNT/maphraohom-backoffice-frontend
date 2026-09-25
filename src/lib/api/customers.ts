@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/api/config";
+import { apiFetch } from "@/lib/api/fetch";
 
 export interface CustomerListItem {
   id: number;
@@ -30,7 +30,7 @@ export async function searchCustomers(
     searchBy: "name",
     limit: "8",
   });
-  const res = await fetch(`${API_BASE_URL}/customers?${params.toString()}`, {
+  const res = await apiFetch(`/customers?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -44,7 +44,7 @@ export async function searchCustomers(
 export async function getCustomerAddresses(
   id: number,
 ): Promise<CustomerAddressItem[]> {
-  const res = await fetch(`${API_BASE_URL}/customers/${id}/addresses`, {
+  const res = await apiFetch(`/customers/${id}/addresses`, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -59,7 +59,7 @@ export async function getCustomerAddresses(
 export async function getCustomerPhones(
   id: number,
 ): Promise<CustomerPhoneItem[]> {
-  const res = await fetch(`${API_BASE_URL}/customers/${id}/phones`, {
+  const res = await apiFetch(`/customers/${id}/phones`, {
     cache: "no-store",
   });
   if (!res.ok) {

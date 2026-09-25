@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/api/config";
+import { apiFetch } from "@/lib/api/fetch";
 
 export interface ProductListItem {
   id: number;
@@ -7,7 +7,7 @@ export interface ProductListItem {
 }
 
 export async function getProducts(): Promise<ProductListItem[]> {
-  const res = await fetch(`${API_BASE_URL}/products`, {
+  const res = await apiFetch(`/products`, {
     cache: "no-store",
   });
   if (!res.ok) {

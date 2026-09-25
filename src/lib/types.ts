@@ -2,15 +2,42 @@ import type { BillType } from "@/lib/bill-type";
 
 // Shape returned by GET /stores — see responses.StoreListItem. GET
 // /stores/:id and PUT /stores/:id return the fuller StoreDetailResponse
-// (signature/address/phone included); the list endpoint's items simply
+// (address/phone/owners included); the list endpoint's items simply
 // don't set those fields, so they come through as undefined.
 export interface Store {
   id: number;
   name: string;
   logo: string;
-  signature?: string;
   address?: string;
   phone?: string;
+  owners?: StoreOwner[];
+}
+
+// One of a store's owners (a store can have several, and a user can own
+// several stores).
+export interface StoreOwner {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
+// Shape returned by GET/PUT /auth/profile — the signed-in user.
+export interface Profile {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  // Ready-to-use URL, or "" when unset. Printed on every receipt this user
+  // exports (the signature used to belong to the store).
+  signature: string;
+  stores: ProfileStore[];
+}
+
+export interface ProfileStore {
+  id: number;
+  name: string;
+  logo: string;
 }
 
 export interface BillItem {
@@ -55,7 +82,6 @@ export interface Bill {
   storeLogo?: string;
   storeAddress?: string;
   storePhone?: string;
-  storeSignature?: string;
   customerId?: number;
   bookNo: number;
   receiptNo: number;
