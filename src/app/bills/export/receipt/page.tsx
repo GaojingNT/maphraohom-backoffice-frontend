@@ -330,11 +330,12 @@ export default async function ExportReceiptPage({
 
                     {/* Only the issuer signs — the counterparty isn't expected
                     to co-sign a printed receipt/voucher. Label on the left,
-                    level with the signed-in user's signature image; their
+                    its bottom lined up with the bottom of the signed-in user's
+                    signature image (as if signed on the same line); their
                     full name centered under the signature. No image → blank
                     space for a physical signature. */}
                     <div className="mt-[22px] flex justify-end">
-                      <div className="grid grid-cols-[auto_auto] items-center gap-x-2">
+                      <div className="grid grid-cols-[auto_auto] items-end gap-x-2">
                         <div className="text-[9px] leading-[1.4] text-[#4a544d]">
                           {rc.config.signatureLabels[1]}
                         </div>
