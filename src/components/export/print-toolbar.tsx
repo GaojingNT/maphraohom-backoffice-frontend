@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft, Printer } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
+import PrintButton from "@/components/export/print-button";
 
 export default function PrintToolbar({
   title,
@@ -25,14 +26,7 @@ export default function PrintToolbar({
           {pagesLabel}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => window.print()}
-        className="flex flex-none items-center gap-1.5 bg-accent px-3.5 py-2.5 text-[12.5px] font-bold whitespace-nowrap"
-      >
-        <Printer size={15} />
-        พิมพ์ / PDF
-      </button>
+      <PrintButton />
     </div>
   );
 }

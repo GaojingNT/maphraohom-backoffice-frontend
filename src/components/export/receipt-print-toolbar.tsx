@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Printer } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
+import PrintButton from "@/components/export/print-button";
 
 export default function ReceiptPrintToolbar({
   title,
@@ -55,15 +56,7 @@ export default function ReceiptPrintToolbar({
           {pagesLabel}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => window.print()}
-        disabled={!ready}
-        className="flex flex-none items-center gap-1.5 bg-accent px-3.5 py-2.5 text-[12.5px] font-bold whitespace-nowrap disabled:opacity-50"
-      >
-        <Printer size={15} />
-        {ready ? "พิมพ์ / PDF" : "กำลังโหลดสลิป…"}
-      </button>
+      <PrintButton ready={ready} notReadyLabel="กำลังโหลดสลิป…" />
     </div>
   );
 }
