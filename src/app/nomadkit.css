@@ -58,7 +58,7 @@
 .mk, .mk * { box-sizing: border-box; }
 .mk { font-family: var(--font-sans); color: var(--ink); font-size: 15px; line-height: 24px; -webkit-font-smoothing: antialiased; }
 .mk .num, .mk-num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
-.mk button { font: inherit; color: inherit; }
+:where(.mk button) { font: inherit; color: inherit; }
 .mk :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* ---------- type helpers ---------- */
