@@ -96,5 +96,19 @@ export interface Bill {
   slipUrl: string | null;
   createdAt: string;
   updatedAt: string;
+  // Audit fields — null when unknown: createdBy for bills from before it
+  // was recorded, editedAt when never edited via PUT /bills/:id,
+  // slipUploadedAt when there's no slip. Optional so an older backend that
+  // doesn't send them still type-checks as "unknown".
+  createdBy?: BillCreator | null;
+  editedAt?: string | null;
+  slipUploadedAt?: string | null;
   items: BillItem[];
+}
+
+// Who issued a bill — name only (GET /bills/:id never sends their email).
+export interface BillCreator {
+  id: number;
+  firstName: string;
+  lastName: string;
 }

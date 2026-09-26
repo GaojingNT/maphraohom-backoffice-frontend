@@ -7,11 +7,12 @@ import { BarChart3, Plus, ReceiptText, SlidersHorizontal } from "lucide-react";
 import BillTypeSheet from "@/components/bills/bill-type-sheet";
 import type { BillType } from "@/lib/bill-type";
 
-// Form screens show their own sticky footer (net total + save) instead of
-// the nav, so the two bars never stack.
-function isFormScreen(pathname: string) {
+// Form screens and the bill detail page show their own sticky footer
+// (save / print + share) instead of the nav, so the two bars never stack.
+function hasOwnFooter(pathname: string) {
   return (
-    pathname.startsWith("/create") || /^\/bills\/[^/]+\/edit/.test(pathname)
+    pathname.startsWith("/create") ||
+    /^\/bills\/[^/]+(\/edit)?\/?$/.test(pathname)
   );
 }
 
@@ -25,7 +26,7 @@ export default function BottomNav() {
     router.push(`/create?type=${type}`);
   }
 
-  if (isFormScreen(pathname)) return null;
+  if (hasOwnFooter(pathname)) return null;
 
   const billsActive = pathname === "/" || pathname.startsWith("/bills");
   const reportActive = pathname.startsWith("/report");
