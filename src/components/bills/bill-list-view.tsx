@@ -4,34 +4,35 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDown,
+  ArrowUp,
+  CalendarDays,
   Check,
-  CheckSquare,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
   FileText,
-  ListFilter,
-  Receipt,
+  Inbox,
+  List,
+  Paperclip,
+  Plus,
   Search,
+  SearchX,
+  SquareCheck,
+  X,
 } from "lucide-react";
-import { formatBaht, formatDateShort } from "@/lib/format";
+import { formatBaht } from "@/lib/format";
 import { toNumber } from "@/lib/money";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
 import type { BillListItem } from "@/lib/types";
-import OverlayPortal from "@/components/overlay-portal";
+import { Sheet } from "@/components/ui/overlay";
+import BillTypeSheet from "@/components/bills/bill-type-sheet";
 
 const PAGE_SIZE = 8;
 
 type TypeTab = "all" | BillType;
-type FilterMode = "all" | "day" | "month" | "year";
+export type FilterMode = "all" | "day" | "month" | "year";
 type SearchBy = "customer_name" | "customer_address";
-
-const TYPE_TABS: { key: TypeTab; label: string }[] = [
-  { key: "all", label: "ทั้งหมด" },
-  { key: "receipt", label: BILL_TYPE_CONFIG.receipt.title },
-  { key: "payment", label: BILL_TYPE_CONFIG.payment.title },
-];
 
 const FILTER_MODES: { key: FilterMode; label: string }[] = [
   { key: "all", label: "ทั้งหมด" },
@@ -65,16 +66,80 @@ function periodLabelOf(key: string, mode: FilterMode): string {
   );
 }
 
-export default function BillListView({ bills }: { bills: BillListItem[] }) {
+// Day-group header: "วันนี้ · 26 ก.ย." / "เมื่อวาน · 25 ก.ย." / "24 ก.ย. 69".
+function dayLabelOf(iso: string, now: number): string {
+  const d = new Date(iso);
+  const today = new Date(now);
+  const startOf = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(today) - startOf(d)) / 86400000);
+  const short = d.toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+  });
+  if (diffDays === 0) return `วันนี้ · ${short}`;
+  if (diffDays === 1) return `เมื่อวาน · ${short}`;
+  return d.toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function timeOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Money in minus money out — receipt and payment totals are never simply
+// added together (spec §7 #6).
+function netOf(bills: BillListItem[]) {
+  let income = 0;
+  let expense = 0;
+  for (const b of bills) {
+    if (b.type === "receipt") income += toNumber(b.total);
+    else expense += toNumber(b.total);
+  }
+  return { income, expense, net: income - expense };
+}
+
+function signedBaht(n: number) {
+  return (n < 0 ? "−" : "") + formatBaht(Math.abs(n));
+}
+
+export interface BillListFilter {
+  mode: FilterMode;
+  period: string | null;
+  storeId: number | null;
+}
+
+export default function BillListView({
+  bills,
+  initialFilter,
+}: {
+  bills: BillListItem[];
+  initialFilter?: BillListFilter;
+}) {
   const router = useRouter();
+  const [now] = useState(() => Date.now());
   const [page, setPage] = useState(1);
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
+  const [storeId, setStoreId] = useState<number | null>(
+    initialFilter?.storeId ?? null,
+  );
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState<SearchBy>("customer_name");
   const [searchOpen, setSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterMode, setFilterMode] = useState<FilterMode>("all");
-  const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>(
+    initialFilter?.mode ?? "all",
+  );
+  const [filterPeriod, setFilterPeriod] = useState<string | null>(
+    initialFilter?.period ?? null,
+  );
+  const [typeSheetOpen, setTypeSheetOpen] = useState(false);
 
   // Selection mode (ADDENDUM-export.md §1) — `selected` is keyed by bill id
   // and deliberately untouched by page/search/filter changes, so a
@@ -83,30 +148,48 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
   const [selected, setSelected] = useState<Record<number, true>>({});
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
-  const byType = useMemo(
-    () => (typeTab === "all" ? bills : bills.filter((b) => b.type === typeTab)),
-    [bills, typeTab],
+  // Stores that appear in the list — the filter chips only show when there
+  // is more than one to choose from.
+  const stores = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const b of bills) map.set(b.storeId, b.storeName);
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [bills]);
+
+  const base = useMemo(
+    () =>
+      bills.filter(
+        (b) =>
+          (typeTab === "all" || b.type === typeTab) &&
+          (storeId == null || b.storeId === storeId),
+      ),
+    [bills, typeTab, storeId],
   );
 
   const periodsForMode = useMemo(() => {
     if (filterMode === "all") return [];
-    const map = new Map<string, { count: number; total: number }>();
-    for (const bill of byType) {
+    const map = new Map<string, BillListItem[]>();
+    for (const bill of base) {
       const key = periodKeyOf(bill.createdAt, filterMode);
-      const entry = map.get(key) ?? { count: 0, total: 0 };
-      entry.count += 1;
-      entry.total += toNumber(bill.total);
-      map.set(key, entry);
+      map.set(key, [...(map.get(key) ?? []), bill]);
     }
     return [...map.entries()]
-      .map(([key, value]) => ({ key, ...value }))
+      .map(([key, rows]) => ({
+        key,
+        count: rows.length,
+        total:
+          typeTab === "all"
+            ? netOf(rows).net
+            : rows.reduce((a, b) => a + toNumber(b.total), 0),
+      }))
       .sort((a, b) => (a.key < b.key ? 1 : -1));
-  }, [byType, filterMode]);
+  }, [base, filterMode, typeTab]);
 
   const activePeriodKey = filterPeriod ?? periodsForMode[0]?.key ?? null;
+  const periodActive = filterMode !== "all" && !!activePeriodKey;
 
   const filtered = useMemo(() => {
-    let rows = byType;
+    let rows = base;
     if (filterMode !== "all" && activePeriodKey) {
       rows = rows.filter(
         (b) => periodKeyOf(b.createdAt, filterMode) === activePeriodKey,
@@ -121,7 +204,7 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
       );
     }
     return rows;
-  }, [byType, filterMode, activePeriodKey, search, searchBy]);
+  }, [base, filterMode, activePeriodKey, search, searchBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -129,62 +212,68 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
+
+  const { income, expense, net } = netOf(filtered);
   const sumTotal = filtered.reduce((a, b) => a + toNumber(b.total), 0);
+  const missingSlipCount = filtered.filter((b) => !b.hasSlip).length;
 
-  const filterChipLabel =
-    filterMode === "all"
-      ? "ทุกช่วงเวลา"
-      : activePeriodKey
-        ? periodLabelOf(activePeriodKey, filterMode)
-        : "ทุกช่วงเวลา";
-
-  function openSearch() {
-    setSearchOpen(true);
-    setFilterOpen(false);
-  }
-  function toggleFilter() {
-    setFilterOpen((v) => !v);
-    setSearchOpen(false);
-  }
-  function resetFilter() {
-    setFilterMode("all");
-    setFilterPeriod(null);
-    setPage(1);
-  }
-  function clearSearch() {
-    setSearch("");
-    setPage(1);
-  }
+  // Rows of this page grouped under a header per day (spec §7 #7).
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; rows: BillListItem[] }[] = [];
+    for (const bill of slice) {
+      const key = periodKeyOf(bill.createdAt, "day");
+      const last = out[out.length - 1];
+      if (last && last.key === key) last.rows.push(bill);
+      else
+        out.push({ key, label: dayLabelOf(bill.createdAt, now), rows: [bill] });
+    }
+    return out;
+  }, [slice, now]);
 
   const selectedBills = bills.filter((b) => selected[b.id]);
   const selectedCount = selectedBills.length;
-  const selectedTotal = selectedBills.reduce((a, b) => a + toNumber(b.total), 0);
-  const missingSlipCount = filtered.filter((b) => !b.hasSlip).length;
+  const selectedTotal = selectedBills.reduce(
+    (a, b) => a + toNumber(b.total),
+    0,
+  );
+  const selectedReceipts = selectedBills.filter(
+    (b) => b.type === "receipt",
+  ).length;
 
-  const pageIds = slice.map((b) => b.id);
-  const allPageSelected =
-    pageIds.length > 0 && pageIds.every((id) => selected[id]);
+  function resetPage() {
+    setPage(1);
+  }
 
-  function toggleSelectAllPage() {
-    if (allPageSelected) {
-      // "ล้างที่เลือก" at this point clears the whole selection, not just
-      // the current page — see ADDENDUM-export.md §1.
-      setSelected({});
-      return;
-    }
-    setSelected((prev) => {
-      const next = { ...prev };
-      pageIds.forEach((id) => {
-        next[id] = true;
-      });
-      return next;
-    });
+  function clearEverything() {
+    setSearch("");
+    setSearchOpen(false);
+    setFilterMode("all");
+    setFilterPeriod(null);
+    setStoreId(null);
+    setTypeTab("all");
+    setPage(1);
   }
 
   function toggleSelectMode() {
     setSelectMode((v) => !v);
     setSelected({});
     setExportSheetOpen(false);
+  }
+
+  function selectAllOrClear() {
+    if (selectedCount > 0) {
+      // "ล้างที่เลือก" clears the whole selection, not just this page —
+      // see ADDENDUM-export.md §1.
+      setSelected({});
+      return;
+    }
+    setSelected((prev) => {
+      const next = { ...prev };
+      slice.forEach((b) => {
+        next[b.id] = true;
+      });
+      return next;
+    });
   }
 
   function toggleSelected(id: number) {
@@ -196,501 +285,555 @@ export default function BillListView({ bills }: { bills: BillListItem[] }) {
     });
   }
 
-  function handlePickSummaryDoc() {
-    const ids = selectedBills.map((b) => b.id).join(",");
+  function exportTo(kind: "summary" | "receipt") {
+    // Documents list bills oldest → newest (spec S6).
+    const ids = [...selectedBills]
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+      .map((b) => b.id)
+      .join(",");
     setExportSheetOpen(false);
-    router.push(`/bills/export/summary?ids=${ids}`);
+    router.push(`/bills/export/${kind}?ids=${ids}`);
   }
 
-  function handlePickReceiptDoc() {
-    const ids = selectedBills.map((b) => b.id).join(",");
-    setExportSheetOpen(false);
-    router.push(`/bills/export/receipt?ids=${ids}`);
-  }
+  const periodLabel = periodActive
+    ? periodLabelOf(activePeriodKey!, filterMode)
+    : "ทุกช่วงเวลา";
 
   return (
     <div className="flex flex-1 flex-col pb-24">
       {/* Header */}
-      <div className="border-b-2 border-divider px-5 pt-[26px] pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-              มะพร้าวหอม · Backoffice
-            </div>
-            <h1 className="mt-2.5 text-[32px] leading-[1.1] font-bold tracking-[-.01em]">
-              บิลทั้งหมด
-            </h1>
+      <div className="mk-header">
+        <div>
+          <div className="mk-eyebrow">มะพร้าวหอม · Backoffice</div>
+          <h1 className="mk-h1">บิลทั้งหมด</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="mk-counter">
+            <b>{filtered.length.toLocaleString("en-US")}</b>
+            <small>รายการ</small>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="border-l-2 border-divider pl-3 text-right">
-              <div className="font-num text-[22px] leading-none font-bold text-accent">
-                {filtered.length.toLocaleString("en-US")}
-              </div>
-              <div className="mt-1 text-[10px] leading-[1.3] font-medium text-ink/55">
-                รายการ
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={toggleSelectMode}
-              aria-label="เลือกบิล"
-              className={`flex h-11 w-11 flex-none items-center justify-center border ${
-                selectMode
-                  ? "border-accent bg-accent text-white"
-                  : "border-divider bg-transparent text-ink/60"
-              }`}
-            >
-              <CheckSquare size={18} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            aria-label="เลือกบิล"
+            aria-pressed={selectMode}
+            className={`mk-iconbtn ${selectMode ? "is-active" : ""}`}
+          >
+            <SquareCheck />
+          </button>
         </div>
       </div>
 
       {/* Selection bar */}
       {selectMode && (
-        <div className="border-b-2 border-divider bg-accent px-5 py-3.5 text-white [animation:riseIn_0.18s_ease_both]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold">
+        <div className="mb-3 px-4">
+          <div className="mk-selbar flex-wrap">
+            <div className="mk-selbar__txt basis-full">
+              <div className="mk-selbar__n">
                 {selectedCount > 0
                   ? `เลือกไว้ ${selectedCount} บิล`
                   : "ยังไม่ได้เลือกบิล"}
               </div>
-              <div className="font-num mt-1 text-[11px] opacity-90">
-                {selectedCount > 0 ? formatBaht(selectedTotal) : "แตะเพื่อเลือก"}
+              <div className="mk-selbar__s">
+                {selectedCount > 0
+                  ? `${formatBaht(selectedTotal)} · รับ ${selectedReceipts} · จ่าย ${selectedCount - selectedReceipts}`
+                  : "แตะบิลที่ต้องการ แล้วกด Export เพื่อออกเอกสาร"}
               </div>
             </div>
-            <div className="flex flex-none items-center gap-2">
+            <div className="grid w-full grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={toggleSelectAllPage}
-                className="h-10 border border-white/60 bg-transparent px-3 text-[12px] font-semibold whitespace-nowrap text-white"
+                onClick={selectAllOrClear}
+                className="mk-btn mk-btn--sm mk-btn--outline"
               >
-                {allPageSelected ? "ล้างที่เลือก" : "เลือกทั้งหน้า"}
+                {selectedCount > 0 ? "ล้างที่เลือก" : "เลือกทั้งหน้า"}
               </button>
               <button
                 type="button"
                 onClick={() => setExportSheetOpen(true)}
                 disabled={selectedCount === 0}
-                className="flex h-10 items-center gap-1.5 bg-white px-3 text-[12.5px] font-bold text-accent disabled:opacity-45"
+                className="mk-btn mk-btn--sm mk-btn--primary"
               >
-                <Download size={14} />
+                <Download />
                 Export
               </button>
             </div>
           </div>
-          {selectedCount === 0 && (
-            <div className="mt-2 text-[11px] opacity-90">
-              แตะบิลที่ต้องการ แล้วกด Export เพื่อออกเอกสาร
-            </div>
-          )}
         </div>
       )}
 
-      {/* Type tabs */}
-      <div className="flex border-b-2 border-divider bg-surface">
-        {TYPE_TABS.map((t) => {
-          const active = typeTab === t.key;
-          const activeClass =
-            t.key === "all"
-              ? "bg-ink text-white"
-              : `${BILL_TYPE_CONFIG[t.key].color.bg} text-white`;
-          return (
+      <div className="flex flex-col gap-2 px-4">
+        {/* Type tabs */}
+        <div className="mk-seg" role="group" aria-label="ประเภทบิล">
+          {(["all", "receipt", "payment"] as TypeTab[]).map((key) => (
             <button
-              key={t.key}
+              key={key}
               type="button"
+              aria-pressed={typeTab === key}
+              className={key === "all" ? "" : BILL_TYPE_CONFIG[key].theme}
               onClick={() => {
-                setTypeTab(t.key);
-                setPage(1);
+                setTypeTab(key);
+                setFilterPeriod(null);
+                resetPage();
               }}
-              className={`min-h-11 flex-1 border-0 border-r border-ink/12 px-3 text-[12.5px] font-semibold last:border-r-0 ${
-                active ? activeClass : "text-ink/62"
-              }`}
             >
-              {t.label}
+              {key === "all" ? "ทั้งหมด" : BILL_TYPE_CONFIG[key].title}
             </button>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      {/* Summary bar */}
-      <div className="grid grid-cols-3 border-b-2 border-divider bg-surface">
-        <div className="border-r border-ink/14 p-[14px]">
-          <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
-            ยอดรวม
+        {/* Summary — always computed from the filtered rows */}
+        {typeTab === "all" ? (
+          <div className="mk-kpis">
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">
+                <i className="mk-kpi__dot text-receipt-600" />
+                รับ
+              </div>
+              <div className="mk-kpi__v is-in">{formatBaht(income)}</div>
+            </div>
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">
+                <i className="mk-kpi__dot text-payment-600" />
+                จ่าย
+              </div>
+              <div className="mk-kpi__v is-out">{formatBaht(expense)}</div>
+            </div>
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">สุทธิ</div>
+              <div className="mk-kpi__v">{signedBaht(net)}</div>
+            </div>
           </div>
-          <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold text-accent">
-            {formatBaht(sumTotal)}
+        ) : (
+          <div className="mk-kpis">
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">ยอดรวม</div>
+              <div
+                className={`mk-kpi__v ${typeTab === "receipt" ? "is-in" : "is-out"}`}
+              >
+                {formatBaht(sumTotal)}
+              </div>
+            </div>
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">เฉลี่ย/บิล</div>
+              <div className="mk-kpi__v">
+                {formatBaht(filtered.length ? sumTotal / filtered.length : 0)}
+              </div>
+            </div>
+            <div className="mk-kpi">
+              <div className="mk-kpi__l">ยังไม่มีสลิป</div>
+              <div className="mk-kpi__v">{missingSlipCount} บิล</div>
+            </div>
           </div>
-        </div>
-        <div className="border-r border-ink/14 p-[14px]">
-          <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
-            เฉลี่ย/บิล
-          </div>
-          <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold">
-            {formatBaht(filtered.length ? sumTotal / filtered.length : 0)}
-          </div>
-        </div>
-        <div className="p-[14px]">
-          <div className="text-[9px] leading-none font-semibold tracking-[.13em] text-ink/50 uppercase">
-            ยังไม่มีสลิป
-          </div>
-          <div className="font-num mt-[7px] text-[17px] leading-[1.2] font-bold">
-            {missingSlipCount.toLocaleString("en-US")}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Sticky search / filter bar */}
-      <div className="sticky top-0 z-20 border-b-2 border-divider bg-surface">
-        {!searchOpen && !filterOpen && (
-          <div className="flex h-12 items-stretch">
-            <button
-              onClick={openSearch}
-              className={`flex min-w-0 flex-1 items-center gap-[9px] border-0 border-r border-ink/14 bg-transparent px-4 text-left hover:bg-accent-100 ${
-                search ? "text-accent" : "text-ink/60"
-              }`}
-            >
-              <Search size={16} className="flex-none" />
-              <span className="truncate text-[12.5px] font-semibold">
-                {search ? `“${search}”` : "ค้นหาบิล"}
-              </span>
-            </button>
-            <button
-              onClick={toggleFilter}
-              className={`flex min-w-0 flex-1 items-center gap-[9px] border-0 px-4 text-left hover:bg-accent-100 ${
-                filterMode !== "all"
-                  ? "bg-accent-100 text-accent"
-                  : "text-ink/60"
-              }`}
-            >
-              <ListFilter size={15} className="flex-none" />
-              <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
-                {filterChipLabel}
-              </span>
-              <ChevronDown
-                size={13}
-                strokeWidth={2.2}
-                className="flex-none opacity-70"
-              />
-            </button>
-          </div>
-        )}
-
-        {searchOpen && (
-          <div>
-            <div className="flex h-12 items-center gap-[10px] pr-3 pl-4">
-              <Search size={16} className="flex-none text-ink/50" />
-              <input
-                autoFocus
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                placeholder={
-                  searchBy === "customer_name"
-                    ? "ค้นหาชื่อลูกค้า…"
-                    : "ค้นหาที่อยู่…"
-                }
-                className="min-w-0 flex-1 border-0 bg-transparent text-[15px] outline-none"
-              />
+      <div className="mk-sticky mt-3">
+        {searchOpen ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <div className="mk-input-wrap min-w-0 flex-1">
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    resetPage();
+                  }}
+                  aria-label="คำค้น"
+                  placeholder={
+                    searchBy === "customer_name"
+                      ? "ค้นหาชื่อลูกค้า…"
+                      : "ค้นหาที่อยู่…"
+                  }
+                  className="mk-input min-h-11! py-2"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="mk-affix h-10!"
+                    aria-label="ล้างคำค้น"
+                    onClick={() => {
+                      setSearch("");
+                      resetPage();
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
               <button
+                type="button"
+                className="mk-btn mk-btn--primary"
                 onClick={() => setSearchOpen(false)}
-                className="flex h-11 items-center px-1 text-[12px] font-semibold text-accent"
               >
                 เสร็จ
               </button>
             </div>
-            <div className="flex border-t border-ink/12">
+            <div className="flex items-center gap-2">
+              <span className="mk-caption">ค้นจาก</span>
               <button
+                type="button"
+                className="mk-chip mk-chip--sm"
+                aria-pressed={searchBy === "customer_name"}
                 onClick={() => {
                   setSearchBy("customer_name");
-                  setPage(1);
+                  resetPage();
                 }}
-                className={`h-10 flex-1 border-0 px-4 text-left text-[11.5px] font-semibold ${
-                  searchBy === "customer_name"
-                    ? "bg-accent text-white"
-                    : "text-ink/62"
-                }`}
               >
                 ชื่อลูกค้า
               </button>
               <button
+                type="button"
+                className="mk-chip mk-chip--sm"
+                aria-pressed={searchBy === "customer_address"}
                 onClick={() => {
                   setSearchBy("customer_address");
-                  setPage(1);
+                  resetPage();
                 }}
-                className={`h-10 flex-1 border-0 border-l border-ink/12 px-4 text-left text-[11.5px] font-semibold ${
-                  searchBy === "customer_address"
-                    ? "bg-accent text-white"
-                    : "text-ink/62"
-                }`}
               >
                 ที่อยู่
               </button>
             </div>
           </div>
-        )}
-
-        {filterOpen && (
-          <div className="border-t border-ink/12">
-            <div className="flex">
-              {FILTER_MODES.map((m) => (
-                <button
-                  key={m.key}
-                  onClick={() => {
-                    setFilterMode(m.key);
-                    setFilterPeriod(null);
-                    setPage(1);
-                  }}
-                  className={`min-h-11 flex-1 border-0 border-r border-ink/12 px-[11px] text-left text-[12px] font-semibold ${
-                    filterMode === m.key
-                      ? "bg-accent text-white"
-                      : "text-ink/62"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            {filterMode !== "all" && (
-              <div className="flex gap-2 overflow-x-auto border-t border-ink/12 px-4 py-3">
-                {periodsForMode.map((p) => {
-                  const on = p.key === activePeriodKey;
-                  return (
-                    <button
-                      key={p.key}
-                      onClick={() => {
-                        setFilterPeriod(p.key);
-                        setPage(1);
-                      }}
-                      className={`flex min-h-11 flex-none flex-col items-start justify-center gap-[3px] border px-[13px] whitespace-nowrap ${
-                        on
-                          ? "border-accent bg-accent text-white"
-                          : "border-divider bg-transparent text-ink"
-                      }`}
-                    >
-                      <span className="text-[12.5px] font-semibold">
-                        {periodLabelOf(p.key, filterMode)}
-                      </span>
-                      <span className="font-num text-[9.5px] opacity-70">
-                        {p.count} บิล · {formatBaht(p.total)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-3 border-t border-ink/12 px-4 py-[11px]">
-              <button
-                onClick={resetFilter}
-                className={`flex-none border-0 bg-transparent p-0 text-[12px] font-semibold whitespace-nowrap ${
-                  filterMode === "all" ? "text-ink/35" : "text-danger"
-                }`}
-              >
-                ล้างตัวกรอง
-              </button>
-              <button
-                onClick={() => setFilterOpen(false)}
-                className="min-h-10 flex-none bg-accent px-4 text-[13px] font-semibold whitespace-nowrap text-white"
-              >
-                ใช้ตัวกรอง
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Rows */}
-      {slice.length > 0 ? (
-        <div className="flex flex-col">
-          {slice.map((bill) => {
-            const isSelected = !!selected[bill.id];
-            const rowConfig = BILL_TYPE_CONFIG[bill.type];
-            const rowClassName = `grid items-center gap-3.5 border-b border-divider-light px-5 py-[15px] text-left text-ink ${
-              selectMode ? "grid-cols-[22px_1fr_auto]" : "grid-cols-[1fr_auto]"
-            } ${
-              isSelected
-                ? "bg-accent-100"
-                : "bg-surface hover:bg-accent-100 active:bg-accent-200"
-            }`;
-            const content = (
-              <>
-                {selectMode && (
-                  <div
-                    className={`flex h-[22px] w-[22px] flex-none items-center justify-center border-2 ${
-                      isSelected
-                        ? "border-accent bg-accent"
-                        : "border-ink/40 bg-transparent"
-                    }`}
-                  >
-                    {isSelected && (
-                      <Check size={14} strokeWidth={3} className="text-white" />
-                    )}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`font-num px-[6px] py-1 text-[10px] font-semibold tracking-[.06em] ${rowConfig.color.bgSoft} ${rowConfig.color.text}`}
-                    >
-                      {rowConfig.title} #{bill.receiptNo}
-                    </span>
-                    {!bill.hasSlip && (
-                      <span className="bg-ink/10 px-[6px] py-1 text-[9.5px] font-semibold text-ink/55">
-                        ยังไม่มีสลิป
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 truncate text-[16px] font-semibold">
-                    {bill.customerName}
-                  </div>
-                  <div className="mt-0.5 truncate text-[12px] text-ink/55">
-                    {bill.customerAddress}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-right">
-                    <div className="font-num text-[16px] leading-[1.1] font-bold">
-                      {formatBaht(bill.total)}
-                    </div>
-                    <div className="font-num mt-[5px] text-[10px] leading-[1.1] text-ink/45">
-                      {formatDateShort(bill.createdAt)} · {bill.itemCount} รายการ
-                    </div>
-                  </div>
-                  {!selectMode && (
-                    <ChevronRight size={16} className="text-ink/35" />
-                  )}
-                </div>
-              </>
-            );
-
-            return selectMode ? (
-              <button
-                key={bill.id}
-                type="button"
-                onClick={() => toggleSelected(bill.id)}
-                className={`w-full ${rowClassName}`}
-              >
-                {content}
-              </button>
-            ) : (
-              <Link
-                key={bill.id}
-                href={`/bills/${bill.id}`}
-                className={rowClassName}
-              >
-                {content}
-              </Link>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="border-b-2 border-divider bg-surface px-5 py-[60px]">
-          <div className="text-[20px] font-bold">ไม่พบบิลที่ค้นหา</div>
-          <p className="mt-2 mb-[18px] text-[13px] leading-[1.6] text-ink/55">
-            ลองเปลี่ยนคำค้น หรือสลับไปค้นจากที่อยู่
-          </p>
-          <button
-            onClick={clearSearch}
-            className="min-h-11 border border-divider px-4 text-[13px] font-semibold"
-          >
-            ล้างการค้นหา
-          </button>
-        </div>
-      )}
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between gap-2.5 px-5 py-4">
-        <div className="text-[11px] leading-[1.4] font-medium text-ink/55">
-          หน้า {currentPage}/{totalPages} · แสดง {slice.length} จาก{" "}
-          {filtered.length}
-        </div>
-        <div className="flex gap-2">
-          <button
-            disabled={currentPage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="flex min-h-11 min-w-11 items-center justify-center border border-divider disabled:opacity-35"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button
-            disabled={currentPage >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="flex min-h-11 min-w-11 items-center justify-center border border-divider disabled:opacity-35"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Export bottom sheet */}
-      {exportSheetOpen && (
-        <OverlayPortal>
-          <div
-            onClick={() => setExportSheetOpen(false)}
-            className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
+        ) : (
+          <div className="mk-searchbar">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className={`mk-pillbtn ${search ? "is-set" : ""}`}
             >
-              <div className="text-[10px] font-semibold tracking-[.18em] text-accent uppercase">
-                EXPORT · A4 แนวตั้ง
+              <Search />
+              <span>{search ? `“${search}”` : "ค้นหาบิล"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterOpen(true)}
+              className={`mk-pillbtn mk-pillbtn--narrow ${periodActive ? "is-set" : ""}`}
+            >
+              <CalendarDays />
+              <span>{periodLabel}</span>
+            </button>
+          </div>
+        )}
+
+        {stores.length > 1 && (
+          <div className="mk-storechips mt-2">
+            <button
+              type="button"
+              className="mk-chip mk-chip--sm"
+              aria-pressed={storeId == null}
+              onClick={() => {
+                setStoreId(null);
+                setFilterPeriod(null);
+                resetPage();
+              }}
+            >
+              ทุกร้าน
+            </button>
+            {stores.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="mk-chip mk-chip--sm"
+                aria-pressed={storeId === s.id}
+                onClick={() => {
+                  setStoreId(s.id);
+                  setFilterPeriod(null);
+                  resetPage();
+                }}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 pb-6">
+        {bills.length === 0 ? (
+          <div className="mk-card mt-4">
+            <div className="mk-empty">
+              <div className="mk-empty__ic">
+                <Inbox />
               </div>
-              <h3 className="mt-2 text-[20px] leading-[1.3] font-bold">
-                เลือกรูปแบบเอกสาร
-              </h3>
-              <p className="mt-1.5 text-[12.5px] text-ink/55">
-                เลือกไว้ {selectedCount} บิล · {formatBaht(selectedTotal)}
-              </p>
-              <div className="mt-4 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={handlePickSummaryDoc}
-                  className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
-                >
-                  <FileText size={20} className="flex-none text-accent" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[14px] font-semibold">
-                      เอกสารสรุปสินค้า
-                    </div>
-                    <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
-                      ตารางรวมทุกบิลที่เลือก +
-                      สรุปน้ำหนักต่อสินค้าและยอดรวมท้ายตาราง
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="flex-none text-ink/35" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePickReceiptDoc}
-                  className="flex items-center gap-3 border border-divider bg-transparent px-4 py-3.5 text-left hover:bg-accent-100"
-                >
-                  <Receipt size={20} className="flex-none text-accent" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[14px] font-semibold">
-                      ใบเสร็จรับเงิน
-                    </div>
-                    <div className="mt-0.5 text-[11.5px] leading-[1.4] text-ink/55">
-                      หนึ่งใบต่อหนึ่งบิล · ครึ่งบนข้อมูลบิล ครึ่งล่างสลิปโอนเงิน
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="flex-none text-ink/35" />
-                </button>
-              </div>
+              <h3>ยังไม่มีบิล</h3>
+              <p>เริ่มออกบิลแรกของร้านได้จากปุ่มด้านล่าง</p>
               <button
                 type="button"
-                onClick={() => setExportSheetOpen(false)}
-                className="mt-4 min-h-[50px] w-full border border-divider bg-transparent text-[14px] font-semibold"
+                className="mk-btn mk-btn--primary"
+                onClick={() => setTypeSheetOpen(true)}
               >
-                ยกเลิก
+                <Plus />
+                สร้างบิล
               </button>
             </div>
           </div>
-        </OverlayPortal>
-      )}
+        ) : slice.length === 0 ? (
+          <div className="mk-card mt-4">
+            <div className="mk-empty">
+              <div className="mk-empty__ic">
+                <SearchX />
+              </div>
+              <h3>ไม่พบบิลที่ค้นหา</h3>
+              <p>ลองเปลี่ยนคำค้น หรือสลับไปค้นจากที่อยู่</p>
+              <button
+                type="button"
+                className="mk-btn mk-btn--outline"
+                onClick={clearEverything}
+              >
+                ล้างการค้นหา
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div className="mk-daygroup">
+                  <span>{g.label}</span>
+                  <span className="num">{g.rows.length} บิล</span>
+                </div>
+                <div className="mk-rows">
+                  {g.rows.map((bill) => (
+                    <BillRow
+                      key={bill.id}
+                      bill={bill}
+                      selectMode={selectMode}
+                      selected={!!selected[bill.id]}
+                      onToggle={() => toggleSelected(bill.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="mk-pager">
+              <button
+                type="button"
+                className="mk-btn mk-btn--outline w-11 px-0!"
+                aria-label="หน้าก่อน"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft />
+              </button>
+              <span className="mk-pager__t">
+                หน้า {currentPage}/{totalPages} · แสดง {slice.length} จาก{" "}
+                {filtered.length}
+              </span>
+              <button
+                type="button"
+                className="mk-btn mk-btn--outline w-11 px-0!"
+                aria-label="หน้าถัดไป"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <ChevronRight />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Period filter sheet */}
+      <Sheet
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        label="ช่วงเวลา"
+      >
+        <h2 className="mk-h2">ช่วงเวลา</h2>
+        <p className="mt-0.5 mb-4 text-[14px] text-ink-muted">
+          ยอดและจำนวนบิลอัปเดตทันทีที่เลือก
+        </p>
+        <div className="mk-seg">
+          {FILTER_MODES.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className="is-sand"
+              aria-pressed={filterMode === m.key}
+              onClick={() => {
+                setFilterMode(m.key);
+                setFilterPeriod(null);
+                resetPage();
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {periodsForMode.length > 0 && (
+          <div className="mk-chips mt-3.5">
+            {periodsForMode.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className="mk-chip"
+                aria-pressed={p.key === activePeriodKey}
+                onClick={() => {
+                  setFilterPeriod(p.key);
+                  resetPage();
+                }}
+              >
+                <b>{periodLabelOf(p.key, filterMode)}</b>
+                <small>
+                  {p.count} บิล · {signedBaht(p.total)}
+                </small>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="mk-grid2 mt-5">
+          <button
+            type="button"
+            className="mk-btn mk-btn--outline mk-btn--lg text-error!"
+            onClick={() => {
+              setFilterMode("all");
+              setFilterPeriod(null);
+              resetPage();
+              setFilterOpen(false);
+            }}
+          >
+            ล้างตัวกรอง
+          </button>
+          <button
+            type="button"
+            className="mk-btn mk-btn--primary mk-btn--lg"
+            onClick={() => setFilterOpen(false)}
+          >
+            ใช้ตัวกรอง
+          </button>
+        </div>
+      </Sheet>
+
+      {/* Export sheet */}
+      <Sheet
+        open={exportSheetOpen}
+        onClose={() => setExportSheetOpen(false)}
+        label="Export"
+      >
+        <div className="mk-eyebrow">EXPORT · A4 แนวตั้ง</div>
+        <h2 className="mk-h2">เลือกรูปแบบเอกสาร</h2>
+        <p className="num mt-0.5 mb-4 text-[14px] text-ink-muted">
+          เลือกไว้ {selectedCount} บิล · {formatBaht(selectedTotal)}
+        </p>
+        <button
+          type="button"
+          className="mk-typecard [--type-100:var(--surface-sunken)] [--type-200:var(--line)] [--type-text:var(--ink)] [--type:var(--ink)]"
+          onClick={() => exportTo("summary")}
+        >
+          <span className="mk-typecard__ic">
+            <List />
+          </span>
+          <span className="min-w-0 flex-1">
+            <b>เอกสารสรุปสินค้า</b>
+            <small>
+              ตารางรวมทุกบิล + สรุปน้ำหนักต่อสินค้าและยอดรวมท้ายตาราง
+            </small>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="mk-typecard [--type-100:var(--sand-100)] [--type-200:var(--sand-200)] [--type-text:var(--ink)] [--type:var(--sand-500)]"
+          onClick={() => exportTo("receipt")}
+        >
+          <span className="mk-typecard__ic text-ink!">
+            <FileText />
+          </span>
+          <span className="min-w-0 flex-1">
+            <b>ใบเสร็จ / ใบสำคัญจ่าย</b>
+            <small>หนึ่งใบต่อหนึ่งบิล · ครึ่งบนข้อมูลบิล ครึ่งล่างสลิป</small>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="mk-btn mk-btn--outline mk-btn--block mk-btn--lg mt-4"
+          onClick={() => setExportSheetOpen(false)}
+        >
+          ยกเลิก
+        </button>
+      </Sheet>
+
+      <BillTypeSheet
+        open={typeSheetOpen}
+        onClose={() => setTypeSheetOpen(false)}
+        onSelect={(type) => router.push(`/create?type=${type}`)}
+      />
     </div>
+  );
+}
+
+function BillRow({
+  bill,
+  selectMode,
+  selected,
+  onToggle,
+}: {
+  bill: BillListItem;
+  selectMode: boolean;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const config = BILL_TYPE_CONFIG[bill.type];
+  const Arrow = bill.type === "receipt" ? ArrowDown : ArrowUp;
+  const className = `mk-billrow ${config.theme} ${selectMode && selected ? "is-selected" : ""}`;
+
+  const content = (
+    <>
+      {selectMode ? (
+        <span className="mk-check">
+          <Check strokeWidth={3} />
+        </span>
+      ) : (
+        <span className="mk-billrow__icon">
+          <Arrow strokeWidth={2.2} />
+        </span>
+      )}
+      <span className="mk-billrow__main">
+        <span className="mk-billrow__badges">
+          <span className="mk-badge mk-badge--type">
+            {config.title} #{bill.receiptNo}
+          </span>
+          {!bill.hasSlip && (
+            <span className="mk-badge mk-badge--noslip">
+              <Paperclip />
+              ยังไม่มีสลิป
+            </span>
+          )}
+        </span>
+        <span className="mk-billrow__name block">{bill.customerName}</span>
+        <span className="mk-billrow__addr block">
+          {bill.storeName ? `${bill.storeName} · ` : ""}
+          {bill.customerAddress}
+        </span>
+      </span>
+      <span className="mk-billrow__right">
+        <span className="mk-billrow__amt block">
+          {bill.type === "payment" ? "−" : ""}
+          {formatBaht(bill.total)}
+        </span>
+        <span className="mk-billrow__meta block">
+          {timeOf(bill.createdAt)} · {bill.itemCount} รายการ
+        </span>
+      </span>
+      {!selectMode && <ChevronRight className="mk-billrow__chev" />}
+    </>
+  );
+
+  return selectMode ? (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selected}
+      className={className}
+    >
+      {content}
+    </button>
+  ) : (
+    <Link href={`/bills/${bill.id}`} className={className}>
+      {content}
+    </Link>
   );
 }
