@@ -23,7 +23,10 @@ interface BillTypeConfig {
   documentTitleEn: string;
   /** Heading above the counterparty block on the printed document. */
   counterpartyHeading: string;
-  /** Tailwind color tokens for this type — see globals.css. */
+  /** Wrapper class that sets --type / --type-text / --type-100 / --type-200
+   *  for the NomadKit components (see nomadkit.css). */
+  theme: "is-receipt" | "is-payment";
+  /** Legacy Tailwind color tokens — used by the A4 documents only. */
   color: {
     text: string;
     bg: string;
@@ -45,6 +48,7 @@ export const BILL_TYPE_CONFIG: Record<BillType, BillTypeConfig> = {
     documentTitle: "ใบเสร็จรับเงิน",
     documentTitleEn: "RECEIPT",
     counterpartyHeading: "ได้รับเงินจาก",
+    theme: "is-receipt",
     color: {
       text: "text-accent",
       bg: "bg-accent",
@@ -64,6 +68,7 @@ export const BILL_TYPE_CONFIG: Record<BillType, BillTypeConfig> = {
     documentTitle: "ใบสำคัญจ่าย",
     documentTitleEn: "PAYMENT VOUCHER",
     counterpartyHeading: "จ่ายเงินให้",
+    theme: "is-payment",
     color: {
       text: "text-payment",
       bg: "bg-payment",

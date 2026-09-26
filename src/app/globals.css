@@ -1,9 +1,10 @@
 @import "tailwindcss";
+@import "./nomadkit.css";
 
+/* Legacy tokens — still used by the A4 documents (bills/export/*), which
+   keep their original PDF look by spec. New UI uses the NomadKit tokens in
+   nomadkit.css instead. */
 :root {
-  --bg: #f4f5f3;
-  --surface: #ffffff;
-  --ink: #16211a;
   --accent: #0e7c3a;
   --accent-100: #e9f6ee;
   --accent-200: #cdeadb;
@@ -11,19 +12,55 @@
   --divider: rgba(22, 33, 26, 0.34);
   --divider-light: rgba(22, 33, 26, 0.13);
   --danger: #a3231a;
-  --frame: #e7e9e5;
-  /* Payment-bill color — mirrors --accent's role but for บิลจ่ายเงิน
-     (receipt bills keep using the existing green --accent tokens). */
   --payment: #c2570a;
-  --payment-100: #fdf1e6;
-  --payment-200: #f8dcc0;
   --payment-soft: #e0a06b;
 }
 
+/* Same values as nomadkit.css, so rounded-md / shadow-card utilities match
+   the mk-* components. */
+@theme {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --shadow-card: 0 1px 2px rgba(31, 26, 20, 0.06), 0 1px 3px rgba(31, 26, 20, 0.04);
+  --shadow-raised: 0 8px 24px rgba(31, 26, 20, 0.12);
+  --shadow-sheet: 0 -8px 32px rgba(31, 26, 20, 0.16);
+}
+
 @theme inline {
+  /* NomadKit */
   --color-bg: var(--bg);
+  --color-frame: var(--frame);
   --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
   --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-sand-100: var(--sand-100);
+  --color-sand-200: var(--sand-200);
+  --color-sand-500: var(--sand-500);
+  --color-sand-700: var(--sand-700);
+  --color-ocean-100: var(--ocean-100);
+  --color-ocean-500: var(--ocean-500);
+  --color-ocean-700: var(--ocean-700);
+  --color-receipt-100: var(--receipt-100);
+  --color-receipt-200: var(--receipt-200);
+  --color-receipt-600: var(--receipt-600);
+  --color-payment-100: var(--payment-100);
+  --color-payment-200: var(--payment-200);
+  --color-payment-600: var(--payment-600);
+  --color-payment-700: var(--payment-700);
+  --color-warning: var(--warning);
+  --color-warning-100: var(--warning-100);
+  --color-warning-700: var(--warning-700);
+  --color-error: var(--error);
+  --color-error-100: var(--error-100);
+  --color-error-700: var(--error-700);
+
+  /* Legacy (A4 documents) */
   --color-accent: var(--accent);
   --color-accent-100: var(--accent-100);
   --color-accent-200: var(--accent-200);
@@ -31,11 +68,9 @@
   --color-divider: var(--divider);
   --color-divider-light: var(--divider-light);
   --color-danger: var(--danger);
-  --color-frame: var(--frame);
   --color-payment: var(--payment);
-  --color-payment-100: var(--payment-100);
-  --color-payment-200: var(--payment-200);
   --color-payment-soft: var(--payment-soft);
+
   --font-heading: var(--font-noto-sans-thai), var(--font-archivo), system-ui,
     sans-serif;
   --font-num: var(--font-archivo), var(--font-noto-sans-thai), system-ui,
@@ -50,7 +85,7 @@ body {
 }
 
 ::selection {
-  background: var(--accent-200);
+  background: var(--sand-200);
 }
 
 @keyframes riseIn {

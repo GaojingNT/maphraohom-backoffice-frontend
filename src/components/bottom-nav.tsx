@@ -1,115 +1,78 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { BarChart3, Home, Settings, SquarePlus } from "lucide-react";
-import type { ComponentType } from "react";
+import { BarChart3, Plus, ReceiptText, SlidersHorizontal } from "lucide-react";
 import BillTypeSheet from "@/components/bills/bill-type-sheet";
 import type { BillType } from "@/lib/bill-type";
 
-interface NavTab {
-  href: string;
-  label: string;
-  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
-  isActive: (pathname: string) => boolean;
+// Form screens show their own sticky footer (net total + save) instead of
+// the nav, so the two bars never stack.
+function isFormScreen(pathname: string) {
+  return (
+    pathname.startsWith("/create") || /^\/bills\/[^/]+\/edit/.test(pathname)
+  );
 }
-
-const TABS: NavTab[] = [
-  {
-    href: "/",
-    label: "บิล",
-    icon: Home,
-    isActive: (p) => p === "/" || p.startsWith("/bills"),
-  },
-  {
-    href: "/report",
-    label: "รายงาน",
-    icon: BarChart3,
-    isActive: (p) => p.startsWith("/report"),
-  },
-  {
-    href: "/admin",
-    label: "จัดการ",
-    icon: Settings,
-    isActive: (p) => p.startsWith("/admin"),
-  },
-];
 
 export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const createButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleSelectType(type: BillType) {
     setSheetOpen(false);
     router.push(`/create?type=${type}`);
   }
 
-  const createActive = pathname.startsWith("/create");
+  if (isFormScreen(pathname)) return null;
+
+  const billsActive = pathname === "/" || pathname.startsWith("/bills");
+  const reportActive = pathname.startsWith("/report");
+  const adminActive = pathname.startsWith("/admin");
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 left-1/2 z-40 grid w-full max-w-[430px] -translate-x-1/2 grid-cols-4 border-t-2 border-divider bg-surface pb-[env(safe-area-inset-bottom)]">
-        {TABS.slice(0, 1).map(({ href, label, icon: Icon, isActive }) => {
-          const active = isActive(pathname);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`-mt-[2px] flex min-h-[66px] flex-col items-center justify-center gap-1.5 border-t-[3px] ${
-                active ? "border-accent text-accent" : "border-transparent text-ink/50"
-              }`}
-            >
-              <Icon size={21} strokeWidth={1.9} />
-              <span className="text-[10.5px] leading-none font-semibold">
-                {label}
-              </span>
-            </Link>
-          );
-        })}
-
+      <nav
+        aria-label="เมนูหลัก"
+        className="mk mk-nav fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2"
+      >
+        <Link href="/" aria-current={billsActive ? "page" : undefined}>
+          <span className="mk-nav__pill">
+            <ReceiptText />
+          </span>
+          บิล
+        </Link>
         <button
-          ref={createButtonRef}
           type="button"
+          className="mk-nav__create"
           onClick={() => setSheetOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
-          className={`-mt-[2px] flex min-h-[66px] flex-col items-center justify-center gap-1.5 border-0 border-t-[3px] bg-transparent ${
-            createActive ? "border-accent text-accent" : "border-transparent text-ink/50"
-          }`}
         >
-          <SquarePlus size={21} strokeWidth={1.9} />
-          <span className="text-[10.5px] leading-none font-semibold">
-            สร้างบิล
+          <span className="mk-nav__pill">
+            <Plus strokeWidth={2.4} />
           </span>
+          สร้างบิล
         </button>
-
-        {TABS.slice(1).map(({ href, label, icon: Icon, isActive }) => {
-          const active = isActive(pathname);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`-mt-[2px] flex min-h-[66px] flex-col items-center justify-center gap-1.5 border-t-[3px] ${
-                active ? "border-accent text-accent" : "border-transparent text-ink/50"
-              }`}
-            >
-              <Icon size={21} strokeWidth={1.9} />
-              <span className="text-[10.5px] leading-none font-semibold">
-                {label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+        <Link href="/report" aria-current={reportActive ? "page" : undefined}>
+          <span className="mk-nav__pill">
+            <BarChart3 />
+          </span>
+          รายงาน
+        </Link>
+        <Link href="/admin" aria-current={adminActive ? "page" : undefined}>
+          <span className="mk-nav__pill">
+            <SlidersHorizontal />
+          </span>
+          จัดการ
+        </Link>
+      </nav>
 
       <BillTypeSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         onSelect={handleSelectType}
-        returnFocusRef={createButtonRef}
       />
     </>
   );
