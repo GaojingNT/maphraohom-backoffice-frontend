@@ -7,10 +7,12 @@ import { DocumentToolbar } from "@/components/export/print-toolbar";
 export default function ReceiptPrintToolbar({
   title,
   pagesLabel,
+  fileName,
   slipUrls,
 }: {
   title: string;
   pagesLabel: string;
+  fileName: string;
   slipUrls: string[];
 }) {
   // Slips must finish loading before window.print() runs, or the print/PDF
@@ -44,7 +46,13 @@ export default function ReceiptPrintToolbar({
     <DocumentToolbar
       title={title}
       pagesLabel={pagesLabel}
-      action={<PrintButton ready={ready} notReadyLabel="กำลังโหลดสลิป…" />}
+      action={
+        <PrintButton
+          fileName={fileName}
+          ready={ready}
+          notReadyLabel="กำลังโหลดสลิป…"
+        />
+      }
     />
   );
 }

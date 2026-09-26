@@ -1,6 +1,7 @@
 import PrintToolbar from "@/components/export/print-toolbar";
 import ResponsivePageScale from "@/components/export/responsive-page-scale";
 import { getBill } from "@/lib/api/bills";
+import { pdfDateStamp } from "@/lib/export/file-name";
 import { parseIds } from "@/lib/export/parse-ids";
 import {
   formatBaht,
@@ -114,10 +115,14 @@ export default async function ExportSummaryPage({
       <PrintToolbar
         title="เอกสารสรุปสินค้า"
         pagesLabel={`${bills.length} บิล · A4 แนวตั้ง`}
+        fileName={`summary-${pdfDateStamp()}-${bills.length}.pdf`}
       />
       <div className="flex justify-center overflow-x-auto px-4 py-6 print:p-0">
         <ResponsivePageScale>
-          <div className="box-border flex min-h-[297mm] w-[210mm] flex-none flex-col bg-white px-[46px] pt-[46px] pb-[40px] text-[#16211a] shadow-[0_8px_28px_rgba(0,0,0,0.35)] print:shadow-none">
+          <div
+            data-pdf-page=""
+            className="box-border flex min-h-[297mm] w-[210mm] flex-none flex-col bg-white px-[46px] pt-[46px] pb-[40px] text-[#16211a] shadow-[0_8px_28px_rgba(0,0,0,0.35)] print:shadow-none"
+          >
             {bills.length === 0 ? (
               <div className="m-auto text-[14px] text-[#6b746d]">
                 ไม่พบบิลที่เลือก

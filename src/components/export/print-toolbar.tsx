@@ -45,15 +45,17 @@ export function DocumentToolbar({
 export default function PrintToolbar({
   title,
   pagesLabel,
+  fileName,
 }: {
   title: string;
   pagesLabel: string;
+  fileName: string;
 }) {
   return (
     <DocumentToolbar
       title={title}
       pagesLabel={pagesLabel}
-      action={<PrintButton />}
+      action={<PrintButton fileName={fileName} />}
     />
   );
 }
