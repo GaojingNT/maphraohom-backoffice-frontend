@@ -26,20 +26,25 @@ export default function PrintButton({
   ready?: boolean;
   notReadyLabel?: string;
 }) {
-  const inAppBrowser = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const inAppBrowser = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
   const [showHelp, setShowHelp] = useState(false);
 
-  const buttonClass =
-    "flex flex-none items-center gap-1.5 bg-accent px-3.5 py-2.5 text-[12.5px] font-bold whitespace-nowrap disabled:opacity-50";
+  const buttonClass = "mk-btn mk-btn--primary flex-none";
 
   if (inAppBrowser === "line") {
     return (
       <button
         type="button"
-        onClick={() => window.location.assign(externalBrowserUrl(window.location.href))}
+        onClick={() =>
+          window.location.assign(externalBrowserUrl(window.location.href))
+        }
         className={buttonClass}
       >
-        <ExternalLink size={15} />
+        <ExternalLink />
         พิมพ์ใน Safari/Chrome
       </button>
     );
@@ -54,16 +59,17 @@ export default function PrintButton({
           aria-expanded={showHelp}
           className={buttonClass}
         >
-          <ExternalLink size={15} />
+          <ExternalLink />
           วิธีพิมพ์ / PDF
         </button>
         {showHelp && (
           <div
             role="status"
-            className="absolute top-full right-0 z-20 mt-2 w-[240px] bg-white p-3 text-[12px] leading-[1.55] font-medium text-ink shadow-[0_8px_28px_rgba(0,0,0,0.35)]"
+            className="absolute top-full right-0 z-20 mt-2 w-[250px] rounded-md bg-surface p-3 text-[13px] leading-[1.55] text-ink shadow-raised"
           >
             แอปนี้พิมพ์จากหน้าเว็บไม่ได้ — กดเมนู <b>⋯</b> มุมขวาบน แล้วเลือก{" "}
-            <b>&quot;เปิดในเบราว์เซอร์&quot;</b> (Safari / Chrome) จากนั้นกดพิมพ์อีกครั้ง
+            <b>&quot;เปิดในเบราว์เซอร์&quot;</b> (Safari / Chrome)
+            จากนั้นกดพิมพ์อีกครั้ง
           </div>
         )}
       </div>
@@ -77,7 +83,7 @@ export default function PrintButton({
       disabled={!ready}
       className={buttonClass}
     >
-      <Printer size={15} />
+      {ready ? <Printer /> : <span className="mk-spin" />}
       {ready ? "พิมพ์ / PDF" : notReadyLabel}
     </button>
   );

@@ -13,7 +13,7 @@ export default function PasswordInput({
   const [visible, setVisible] = useState(false);
 
   return (
-    <div className="relative">
+    <div className="mk-input-wrap">
       <input
         {...props}
         type={visible ? "text" : "password"}
@@ -22,16 +22,16 @@ export default function PasswordInput({
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
-        className={`h-12 w-full border border-divider bg-bg pr-12 pl-[13px] text-[15px] outline-none ${className}`}
+        className={`mk-input ${className}`}
       />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
         aria-pressed={visible}
-        className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-ink/45 hover:text-ink/70"
+        className="mk-affix"
       >
-        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        {visible ? <EyeOff size={20} /> : <Eye size={20} />}
       </button>
     </div>
   );

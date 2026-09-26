@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, ChevronLeft } from "lucide-react";
+import { Check, CircleAlert } from "lucide-react";
 import {
   deleteSignatureAction,
   updateProfileAction,
@@ -12,6 +12,7 @@ import {
 import { useToast } from "@/components/toast-provider";
 import ImageUploadPanel from "@/components/admin/image-upload-panel";
 import ChangePasswordPanel from "@/components/admin/change-password-panel";
+import TopBar, { PageHeading } from "@/components/ui/top-bar";
 import type { Profile } from "@/lib/types";
 
 // Loose on purpose — the backend's validator is the real check; this only
@@ -47,12 +48,12 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setEmailError("กรอกอีเมล");
-      showToast("กรอกข้อมูลให้ครบก่อนบันทึก");
+      showToast("กรอกข้อมูลให้ครบก่อนบันทึก", "error");
       return;
     }
     if (!EMAIL_PATTERN.test(trimmedEmail)) {
       setEmailError("รูปแบบอีเมลไม่ถูกต้อง");
-      showToast("กรอกข้อมูลให้ถูกต้องก่อนบันทึก");
+      showToast("กรอกข้อมูลให้ถูกต้องก่อนบันทึก", "error");
       return;
     }
     setEmailError(undefined);
@@ -65,7 +66,7 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
         email: trimmedEmail,
       });
       if (!result.ok) {
-        showToast(result.error);
+        showToast(result.error, "error");
         return;
       }
       showToast("บันทึกโปรไฟล์แล้ว");
@@ -76,122 +77,103 @@ export default function ProfileEditView({ profile }: { profile: Profile }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col pb-28 [animation:riseIn_0.22s_ease_both]">
-      <div className="border-b-2 border-divider bg-surface px-5 pt-4 pb-[18px]">
-        <Link
-          href="/admin/profile"
-          className="flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold text-accent"
-        >
-          <ChevronLeft size={16} />
-          กลับ
-        </Link>
-        <div className="mt-2 text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          โปรไฟล์
-        </div>
-        <h1 className="mt-2.5 text-[26px] leading-[1.25] font-bold">
-          แก้ไขโปรไฟล์
-        </h1>
-      </div>
+    <div className="flex flex-1 flex-col pb-28">
+      <TopBar backHref="/admin/profile" />
+      <div className="flex flex-col gap-4 px-4">
+        <PageHeading eyebrow="โปรไฟล์" title="แก้ไขโปรไฟล์" />
 
-      <div className="flex flex-col gap-[22px] border-b-2 border-divider bg-surface p-5">
-        <div>
-          <label
-            htmlFor="profile-first-name"
-            className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase"
-          >
-            ชื่อ
-          </label>
-          <input
-            id="profile-first-name"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            placeholder="ชื่อ"
-            autoComplete="given-name"
-            maxLength={100}
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="profile-last-name"
-            className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase"
-          >
-            นามสกุล
-          </label>
-          <input
-            id="profile-last-name"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            placeholder="นามสกุล"
-            autoComplete="family-name"
-            maxLength={100}
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="profile-email"
-            className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase"
-          >
-            อีเมล <span className="text-accent">*</span>
-          </label>
-          <input
-            id="profile-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-            autoComplete="email"
-            inputMode="email"
-            maxLength={100}
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-          {emailError ? (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {emailError}
+        <div className="mk-card mk-card__pad">
+          <div className="mk-grid2">
+            <div className="mk-field">
+              <label htmlFor="profile-first-name" className="mk-label">
+                ชื่อ
+              </label>
+              <input
+                id="profile-first-name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="ชื่อ"
+                autoComplete="given-name"
+                maxLength={100}
+                className="mk-input"
+              />
             </div>
-          ) : (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-ink/45">
-              ใช้อีเมลนี้เข้าสู่ระบบ
+            <div className="mk-field">
+              <label htmlFor="profile-last-name" className="mk-label">
+                นามสกุล
+              </label>
+              <input
+                id="profile-last-name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="นามสกุล"
+                autoComplete="family-name"
+                maxLength={100}
+                className="mk-input"
+              />
             </div>
-          )}
-        </div>
-
-        <ChangePasswordPanel email={profile.email} />
-
-        <div>
-          <ImageUploadPanel
-            label="ลายเซ็น"
-            imageUrl={signature || null}
-            onUpload={uploadSignature}
-            onDelete={deleteSignature}
-            onChange={(url) => setSignature(url ?? "")}
-            emptyLabel="แตะเพื่ออัปโหลดลายเซ็น"
-          />
-          <div className="mt-2 text-[11.5px] leading-[1.4] text-ink/45">
-            ใช้พิมพ์บนใบเสร็จ/ใบสำคัญจ่ายทุกใบที่คุณส่งออก
           </div>
-        </div>
-      </div>
 
-      <div className="flex gap-2.5 px-5 py-3.5">
-        <Link
-          href="/admin/profile"
-          className="flex min-h-[52px] items-center border border-divider bg-transparent px-[18px] text-[14px] font-semibold"
-        >
-          ยกเลิก
-        </Link>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="flex min-h-[52px] flex-1 items-center justify-center gap-2 bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-60"
-        >
-          {submitting ? "กำลังบันทึก…" : "บันทึก"}
-          <Check size={17} className="ml-auto" />
-        </button>
+          <div className={`mk-field mt-4 ${emailError ? "has-error" : ""}`}>
+            <label htmlFor="profile-email" className="mk-label">
+              อีเมล <span className="req">*</span>
+            </label>
+            <input
+              id="profile-email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setEmailError(undefined);
+              }}
+              placeholder="name@example.com"
+              autoComplete="email"
+              inputMode="email"
+              maxLength={100}
+              className="mk-input"
+            />
+            {emailError && (
+              <div className="mk-err">
+                <CircleAlert />
+                {emailError}
+              </div>
+            )}
+            <div className="mk-help">ใช้อีเมลนี้เข้าสู่ระบบ</div>
+          </div>
+
+          <ChangePasswordPanel email={profile.email} />
+        </div>
+
+        <div className="mk-grid2">
+          <Link
+            href="/admin/profile"
+            className="mk-btn mk-btn--outline mk-btn--lg"
+          >
+            ยกเลิก
+          </Link>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="mk-btn mk-btn--primary mk-btn--lg"
+          >
+            {submitting ? <span className="mk-spin" /> : <Check />}
+            {submitting ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
+        </div>
+
+        {/* Saves on its own — kept out of the form above so "ยกเลิก" is never
+            mistaken for undoing a signature change. */}
+        <ImageUploadPanel
+          label="ลายเซ็น"
+          imageUrl={signature || null}
+          onUpload={uploadSignature}
+          onDelete={deleteSignature}
+          onChange={(url) => setSignature(url ?? "")}
+          emptyLabel="แตะเพื่ออัปโหลดลายเซ็น"
+          deleteBody="ใบเสร็จที่ส่งออกหลังจากนี้จะเว้นช่องลายเซ็นว่างไว้"
+          helper="ใช้พิมพ์บนใบเสร็จ/ใบสำคัญจ่ายทุกใบที่คุณส่งออก"
+        />
       </div>
     </div>
   );

@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Check,
-  ChevronDown,
+  ChevronLeft,
+  CircleAlert,
   Plus,
+  RefreshCw,
   Trash2,
+  TriangleAlert,
   Upload,
 } from "lucide-react";
-import { ApiError, createBill, updateBill, uploadSlip, type BillItemInput } from "@/lib/api/bills";
+import {
+  ApiError,
+  createBill,
+  updateBill,
+  uploadSlip,
+  type BillItemInput,
+} from "@/lib/api/bills";
 import {
   getCustomerAddresses,
   getCustomerPhones,
@@ -20,12 +28,18 @@ import {
 } from "@/lib/api/customers";
 import type { ProductListItem } from "@/lib/api/products";
 import { getLastPrices } from "@/lib/api/stores";
-import { formatBaht, priceFieldLabel, quantityFieldLabel, toDatetimeLocalValue } from "@/lib/format";
+import {
+  formatBaht,
+  formatQuantity,
+  priceFieldLabel,
+  quantityFieldLabel,
+  toDatetimeLocalValue,
+} from "@/lib/format";
 import { subtotalBaht, toNumber, totalBaht } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
 import type { Bill, Store } from "@/lib/types";
-import OverlayPortal from "@/components/overlay-portal";
+import { ConfirmLeave } from "@/components/ui/overlay";
 
 const BOTTLE_UNIT = "ขวด";
 
@@ -44,7 +58,10 @@ interface FormErrors {
   discount?: string;
   shippingFee?: string;
   itemsList?: string;
-  items: Record<string, { quantity?: string; price?: string; productId?: string }>;
+  items: Record<
+    string,
+    { quantity?: string; price?: string; productId?: string }
+  >;
 }
 
 function sanitizeNumberInput(raw: string): string {
@@ -60,6 +77,9 @@ function hasErrors(errors: FormErrors): boolean {
     !!errors.storeId ||
     !!errors.customerName ||
     !!errors.customerAddress ||
+    !!errors.customerId ||
+    !!errors.discount ||
+    !!errors.shippingFee ||
     !!errors.itemsList ||
     Object.keys(errors.items).length > 0
   );
@@ -103,6 +123,28 @@ function applyServerFieldErrors(
   return next;
 }
 
+// Scroll to and focus the first field that failed (spec §7 #4).
+function focusFirstError() {
+  requestAnimationFrame(() => {
+    const field = document.querySelector<HTMLElement>(".has-error");
+    if (!field) return;
+    field.scrollIntoView({ block: "center", behavior: "smooth" });
+    field
+      .querySelector<HTMLElement>("input, select, textarea")
+      ?.focus({ preventScroll: true });
+  });
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div className="mk-err">
+      <CircleAlert />
+      {message}
+    </div>
+  );
+}
+
 export default function BillFormView({
   type,
   stores,
@@ -127,11 +169,14 @@ export default function BillFormView({
   // Create only — prefilled with "now" so the common case needs no input,
   // but editable for entering a bill that actually happened earlier.
   // Edit doesn't touch createdAt at all (not sent in that payload branch).
-  const [createdAt, setCreatedAt] = useState(() => toDatetimeLocalValue(new Date()));
+  const [createdAt, setCreatedAt] = useState(() =>
+    toDatetimeLocalValue(new Date()),
+  );
   const [customerId, setCustomerId] = useState<number | undefined>(
     editingBill?.customerId,
   );
   const [lastPrices, setLastPrices] = useState<Map<number, string>>(new Map());
+  const [autoFilled, setAutoFilled] = useState(false);
   const [items, setItems] = useState<FormItem[]>(() =>
     editingBill
       ? editingBill.items.map((it) => ({
@@ -152,7 +197,9 @@ export default function BillFormView({
     editingBill?.customerPhone ?? "",
   );
   const [discount, setDiscount] = useState(editingBill?.discount ?? "");
-  const [shippingFee, setShippingFee] = useState(editingBill?.shippingFee ?? "");
+  const [shippingFee, setShippingFee] = useState(
+    editingBill?.shippingFee ?? "",
+  );
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>(emptyErrors());
@@ -168,6 +215,9 @@ export default function BillFormView({
     [],
   );
   const [phoneOptions, setPhoneOptions] = useState<CustomerPhoneItem[]>([]);
+  const nameBlurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   // Debounced customer-name search.
   useEffect(() => {
@@ -217,6 +267,8 @@ export default function BillFormView({
     };
   }, [slipPreviewUrl]);
 
+  useEffect(() => () => clearTimeout(nameBlurTimer.current), []);
+
   // Warn on browser/back navigation away from unsaved work — the in-app
   // "ยกเลิก" button below handles the same confirm for its own click.
   useEffect(() => {
@@ -227,9 +279,30 @@ export default function BillFormView({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
+  function clearError(key: keyof Omit<FormErrors, "items">) {
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  }
+
+  function clearItemError(
+    itemKey: string,
+    field: "productId" | "quantity" | "price",
+  ) {
+    setErrors((prev) => {
+      const row = prev.items[itemKey];
+      if (!row?.[field]) return prev;
+      const nextRow = { ...row, [field]: undefined };
+      const nextItems = { ...prev.items };
+      if (!nextRow.productId && !nextRow.quantity && !nextRow.price)
+        delete nextItems[itemKey];
+      else nextItems[itemKey] = nextRow;
+      return { ...prev, items: nextItems };
+    });
+  }
+
   function handleStoreChange(value: string) {
     setDirty(true);
     setStoreId(value ? Number(value) : null);
+    clearError("storeId");
   }
 
   function handleCustomerNameChange(value: string) {
@@ -237,9 +310,12 @@ export default function BillFormView({
     setCustomerName(value);
     setCustomerId(undefined);
     setShowCustomerSuggestions(!!value.trim());
+    clearError("customerName");
+    clearError("customerId");
   }
 
   async function handleSelectCustomer(customer: CustomerListItem) {
+    setDirty(true);
     setCustomerName(customer.name);
     setCustomerId(customer.id);
     setShowCustomerSuggestions(false);
@@ -254,7 +330,10 @@ export default function BillFormView({
       setAddressOptions(addresses);
       setPhoneOptions(phones);
       // Backend orders default-first, so [0] is the default to prefill.
-      if (addresses.length > 0) setCustomerAddress(addresses[0].address);
+      if (addresses.length > 0) {
+        setCustomerAddress(addresses[0].address);
+        clearError("customerAddress");
+      }
       if (phones.length > 0) setCustomerPhone(phones[0].phone);
     } catch {
       // Address/phone stay editable manually either way.
@@ -273,26 +352,25 @@ export default function BillFormView({
     setSlipPreviewUrl(URL.createObjectURL(file));
   }
 
-  function clearSlip() {
-    handleSlipChange(null);
-  }
-
   function handleItemProductChange(key: string, productId: number | null) {
     setDirty(true);
+    clearItemError(key, "productId");
+    // Prefill price only when the row doesn't already have one typed.
+    const row = items.find((it) => it.key === key);
+    const prefill =
+      row && productId != null && storeId != null && !row.price
+        ? lastPrices.get(productId)
+        : undefined;
+    if (prefill) setAutoFilled(true);
     setItems((prev) =>
-      prev.map((it) => {
-        if (it.key !== key) return it;
-        // Prefill price only when the row doesn't already have one typed.
-        const prefill =
-          productId != null && storeId != null && !it.price
-            ? lastPrices.get(productId)
-            : undefined;
-        return { ...it, productId, price: prefill ?? it.price };
-      }),
+      prev.map((it) =>
+        it.key === key ? { ...it, productId, price: prefill ?? it.price } : it,
+      ),
     );
   }
   function updateItemQuantity(key: string, raw: string) {
     setDirty(true);
+    clearItemError(key, "quantity");
     const quantity = sanitizeNumberInput(raw);
     setItems((prev) =>
       prev.map((it) => (it.key === key ? { ...it, quantity } : it)),
@@ -300,11 +378,15 @@ export default function BillFormView({
   }
   function updateItemPrice(key: string, raw: string) {
     setDirty(true);
+    clearItemError(key, "price");
     const price = sanitizeNumberInput(raw);
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, price } : it)));
+    setItems((prev) =>
+      prev.map((it) => (it.key === key ? { ...it, price } : it)),
+    );
   }
   function addItem() {
     setDirty(true);
+    clearError("itemsList");
     setItems((prev) => [...prev, createFormItem()]);
   }
   function removeItem(key: string) {
@@ -313,18 +395,21 @@ export default function BillFormView({
   }
 
   const itemsComputed = items.map((it) => {
-    const product = it.productId != null ? productById.get(it.productId) : undefined;
+    const product =
+      it.productId != null ? productById.get(it.productId) : undefined;
     const unit = product?.unit ?? "กก.";
     const subtotal = subtotalBaht(it.quantity, it.price);
-    return { ...it, unit, subtotal };
+    return { ...it, product, unit, subtotal };
   });
-  const subtotalCentsList = itemsComputed.map((it) => Math.round(it.subtotal * 100));
+  const subtotalCentsList = itemsComputed.map((it) =>
+    Math.round(it.subtotal * 100),
+  );
   const itemsSubtotal = itemsComputed.reduce((a, it) => a + it.subtotal, 0);
   const netTotal = totalBaht(subtotalCentsList, discount, shippingFee);
 
   function validate(): FormErrors {
     const next = emptyErrors();
-    if (storeId == null) next.storeId = "เลือกสาขาก่อน";
+    if (storeId == null) next.storeId = "เลือกร้านก่อน";
     if (!customerName.trim())
       next.customerName = `กรอกชื่อ${config.partyLabel}`;
     if (!customerAddress.trim())
@@ -334,11 +419,15 @@ export default function BillFormView({
     if (toNumber(shippingFee) < 0) next.shippingFee = "ค่าส่งต้องไม่ติดลบ";
     items.forEach((it) => {
       const rowErr: FormErrors["items"][string] = {};
-      const product = it.productId != null ? productById.get(it.productId) : undefined;
+      const product =
+        it.productId != null ? productById.get(it.productId) : undefined;
       if (!it.productId) rowErr.productId = "เลือกสินค้าของรายการนี้";
       if (!(toNumber(it.quantity) > 0)) {
         rowErr.quantity = "จำนวนต้องมากกว่า 0";
-      } else if (product?.unit === BOTTLE_UNIT && !Number.isInteger(toNumber(it.quantity))) {
+      } else if (
+        product?.unit === BOTTLE_UNIT &&
+        !Number.isInteger(toNumber(it.quantity))
+      ) {
         rowErr.quantity = "ขวดต้องเป็นจำนวนเต็ม";
       }
       if (!(toNumber(it.price) > 0)) rowErr.price = "ราคาต้องมากกว่า 0";
@@ -347,26 +436,26 @@ export default function BillFormView({
     return next;
   }
 
+  function leave() {
+    setConfirmLeaveOpen(false);
+    if (editingBill) router.push(`/bills/${editingBill.id}`);
+    else router.push("/");
+  }
+
   function handleCancel() {
     if (dirty) {
       setConfirmLeaveOpen(true);
       return;
     }
-    if (editingBill) router.push(`/bills/${editingBill.id}`);
-    else router.push("/");
-  }
-
-  function confirmLeave() {
-    setConfirmLeaveOpen(false);
-    if (editingBill) router.push(`/bills/${editingBill.id}`);
-    else router.push("/");
+    leave();
   }
 
   async function handleSubmit() {
     const nextErrors = validate();
     setErrors(nextErrors);
     if (hasErrors(nextErrors)) {
-      showToast("กรอกข้อมูลให้ครบก่อนบันทึก");
+      showToast("กรอกข้อมูลให้ครบก่อนบันทึก", "error");
+      focusFirstError();
       return;
     }
 
@@ -390,7 +479,9 @@ export default function BillFormView({
       // omitting it here makes that explicit. An emptied/invalid picker
       // just falls back to the backend's own "now" default rather than
       // sending a bad date.
-      ...(!editingBill && createdAt && !Number.isNaN(new Date(createdAt).getTime())
+      ...(!editingBill &&
+      createdAt &&
+      !Number.isNaN(new Date(createdAt).getTime())
         ? { createdAt: new Date(createdAt).toISOString() }
         : {}),
     };
@@ -400,15 +491,17 @@ export default function BillFormView({
       let bill: Bill;
       if (editingBill) {
         bill = await updateBill(editingBill.id, payload);
+        setDirty(false);
         showToast("แก้ไขบิลเรียบร้อย");
         router.push(`/bills/${bill.id}`);
       } else {
         bill = await createBill(payload);
+        setDirty(false);
         if (slipFile) {
           try {
             await uploadSlip(bill.id, slipFile);
           } catch {
-            showToast("สร้างบิลแล้ว แต่แนบสลิปไม่สำเร็จ");
+            showToast("สร้างบิลแล้ว แต่แนบสลิปไม่สำเร็จ", "error");
             router.push(`/bills/${bill.id}`);
             return;
           }
@@ -419,528 +512,555 @@ export default function BillFormView({
     } catch (err) {
       if (err instanceof ApiError && err.fieldErrors.length > 0) {
         setErrors(applyServerFieldErrors(err.fieldErrors, items));
-        showToast("กรอกข้อมูลไม่ถูกต้อง ตรวจสอบแต่ละแถว");
+        showToast("กรอกข้อมูลไม่ถูกต้อง ตรวจสอบแต่ละแถว", "error");
+        focusFirstError();
       } else {
-        showToast(err instanceof Error ? err.message : "บันทึกบิลไม่สำเร็จ");
+        showToast(
+          err instanceof Error ? err.message : "บันทึกบิลไม่สำเร็จ",
+          "error",
+        );
       }
     } finally {
       setSubmitting(false);
     }
   }
 
+  const storeName =
+    stores.find((s) => s.id === storeId)?.name ?? editingBill?.storeName ?? "";
+  const submitLabel = submitting
+    ? "กำลังบันทึก…"
+    : isEditing
+      ? config.editSubmitLabel
+      : config.submitLabel;
+  const fieldClass = (err?: string) => `mk-field ${err ? "has-error" : ""}`;
+
   return (
-    <div className="flex flex-1 flex-col pb-28">
-      <div className={`border-b-2 border-divider px-5 pt-[26px] pb-4`}>
-        <div
-          className={`text-[10px] leading-none font-semibold tracking-[.18em] uppercase ${config.color.text}`}
-        >
-          {isEditing ? `แก้ไข${config.title}` : config.createTitle}
-        </div>
-        <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          {isEditing ? "แก้ไขบิล" : config.title}
-        </h1>
-        <p className="mt-2 text-[12.5px] leading-[1.6] text-ink/55">
-          เลขเล่มและเลขที่ ระบบออกให้อัตโนมัติ — กรอกราคาต่อหน่วยเองทุกรายการ
-        </p>
+    <div className={`flex flex-1 flex-col ${config.theme}`}>
+      <div className="mk-topbar">
+        <button type="button" className="mk-back" onClick={handleCancel}>
+          <ChevronLeft />
+          ยกเลิก
+        </button>
+        <span className="mk-badge mk-badge--type mr-2">{config.title}</span>
       </div>
 
-      <div className="flex flex-col gap-[22px] border-b-2 border-divider bg-surface p-5">
-        {/* Created-at — create only; prefilled with now, editable for a
-            bill entered after the fact. Not part of the numbered sequence
-            below since it's document metadata, not a required decision. */}
-        {!isEditing && (
-          <div>
-            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              เวลาที่สร้างบิล
+      <div className="px-4 pb-6">
+        <div className="mk-eyebrow text-(--type-text)!">
+          {isEditing ? `แก้ไข${config.title}` : config.createTitle}
+        </div>
+        <h1 className="mk-h1">{isEditing ? "แก้ไขบิล" : config.title}</h1>
+        <p className="mk-caption mt-1 mb-5 text-[13px]!">
+          เลขเล่มและเลขที่ ระบบออกให้อัตโนมัติ — กรอกราคาต่อหน่วยเองทุกรายการ
+        </p>
+
+        {/* Store (+ created-at on create) */}
+        <div className="mk-card mk-card__pad">
+          {!isEditing && (
+            <div className="mk-field">
+              <label className="mk-label" htmlFor="bill-created-at">
+                เวลาที่สร้างบิล <span className="opt">(ไม่บังคับ)</span>
+              </label>
+              <input
+                id="bill-created-at"
+                type="datetime-local"
+                value={createdAt}
+                onChange={(e) => {
+                  setDirty(true);
+                  setCreatedAt(e.target.value);
+                }}
+                className="mk-input num"
+              />
+              <div className="mk-help">
+                ค่าเริ่มต้นคือเวลาปัจจุบัน — แก้ไขได้ถ้ากรอกบิลย้อนหลัง
+              </div>
+            </div>
+          )}
+
+          <div className={fieldClass(errors.storeId)}>
+            <label className="mk-label" htmlFor="bill-store">
+              ร้าน <span className="req">*</span>
+            </label>
+            {isEditing ? (
+              // Store and type can't change after issue (the server rejects
+              // it), so edit shows the store read-only (spec §7 #5).
+              <>
+                <input
+                  id="bill-store"
+                  className="mk-input"
+                  readOnly
+                  value={storeName}
+                />
+                <div className="mk-help">
+                  ร้านและประเภทบิลแก้ไขไม่ได้หลังออกบิล
+                </div>
+              </>
+            ) : (
+              <>
+                <select
+                  id="bill-store"
+                  value={storeId ?? ""}
+                  onChange={(e) => handleStoreChange(e.target.value)}
+                  className="mk-input"
+                >
+                  <option value="">— เลือกร้าน —</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mk-help">
+                  เลือกร้านเพื่อดึงราคาที่เคยใช้ล่าสุดของร้านนี้มาเติมให้
+                  (แก้ไขได้)
+                </div>
+              </>
+            )}
+            <FieldError message={errors.storeId} />
+          </div>
+        </div>
+
+        {/* Party — before the items, the same order as on the paper bill */}
+        <h2 className="mk-title mt-6 mb-2">{config.partyLabel}</h2>
+        <div className="mk-card mk-card__pad">
+          <div
+            className={`${fieldClass(errors.customerName || errors.customerId)} relative`}
+          >
+            <label className="mk-label" htmlFor="bill-party-name">
+              ชื่อ{config.partyLabel} <span className="req">*</span>
             </label>
             <input
-              type="datetime-local"
-              value={createdAt}
+              id="bill-party-name"
+              value={customerName}
+              onChange={(e) => handleCustomerNameChange(e.target.value)}
+              onFocus={() =>
+                setShowCustomerSuggestions(
+                  !!customerName.trim() && customerId == null,
+                )
+              }
+              onBlur={() => {
+                nameBlurTimer.current = setTimeout(
+                  () => setShowCustomerSuggestions(false),
+                  120,
+                );
+              }}
+              placeholder="เช่น ร้านขนมป้ามาลี"
+              autoComplete="off"
+              className="mk-input"
+            />
+            {showCustomerSuggestions && customerSuggestions.length > 0 && (
+              <div className="mk-ac">
+                {customerSuggestions.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectCustomer(c);
+                    }}
+                  >
+                    <b>{c.name}</b>
+                    <small>
+                      C{c.id}
+                      {c.phone ? ` · ${c.phone}` : ""}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            )}
+            {customerId == null &&
+              customerName.trim() &&
+              !showCustomerSuggestions && (
+                <div className="mk-help">
+                  {config.partyLabel}ใหม่ — จะบันทึกไว้ให้เลือกครั้งหน้า
+                </div>
+              )}
+            <FieldError message={errors.customerName || errors.customerId} />
+          </div>
+
+          <div className={fieldClass(errors.customerAddress)}>
+            <label className="mk-label" htmlFor="bill-party-address">
+              ที่อยู่{config.partyLabel} <span className="req">*</span>
+            </label>
+            {addressOptions.length > 1 && (
+              <div className="mk-chips mb-2">
+                {addressOptions.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="mk-chip mk-chip--sm max-w-[250px]"
+                    aria-pressed={customerAddress === a.address}
+                    onClick={() => {
+                      setDirty(true);
+                      setCustomerAddress(a.address);
+                      clearError("customerAddress");
+                    }}
+                  >
+                    <span className="truncate">{a.address}</span>
+                    {a.isDefault && (
+                      <span className="mk-badge mk-badge--default">
+                        ค่าเริ่มต้น
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <textarea
+              id="bill-party-address"
+              value={customerAddress}
               onChange={(e) => {
                 setDirty(true);
-                setCreatedAt(e.target.value);
+                setCustomerAddress(e.target.value);
+                clearError("customerAddress");
               }}
-              className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
+              rows={2}
+              placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
+              className="mk-input"
             />
-            <div className="mt-[7px] text-[11.5px] leading-[1.5] text-ink/50">
-              ค่าเริ่มต้นคือเวลาปัจจุบัน — แก้ไขได้ถ้ากรอกบิลย้อนหลัง
-            </div>
+            <FieldError message={errors.customerAddress} />
+          </div>
+
+          <div className="mk-field">
+            <label className="mk-label" htmlFor="bill-party-phone">
+              เบอร์โทรศัพท์{config.partyLabel}{" "}
+              <span className="opt">(ไม่บังคับ)</span>
+            </label>
+            {phoneOptions.length > 1 && (
+              <div className="mk-chips mb-2">
+                {phoneOptions.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="mk-chip mk-chip--sm num"
+                    aria-pressed={customerPhone === p.phone}
+                    onClick={() => {
+                      setDirty(true);
+                      setCustomerPhone(p.phone);
+                    }}
+                  >
+                    {p.phone}
+                    {p.isDefault && (
+                      <span className="mk-badge mk-badge--default">
+                        ค่าเริ่มต้น
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input
+              id="bill-party-phone"
+              value={customerPhone}
+              onChange={(e) => {
+                setDirty(true);
+                setCustomerPhone(e.target.value);
+              }}
+              type="tel"
+              inputMode="tel"
+              placeholder="เช่น 0812345678"
+              autoComplete="off"
+              className="mk-input num"
+            />
+          </div>
+        </div>
+
+        {/* Items */}
+        <div className="mt-6 mb-2 flex items-baseline justify-between">
+          <h2 className="mk-title">รายการสินค้า</h2>
+          <span className="mk-caption">{items.length} รายการ</span>
+        </div>
+        {errors.itemsList && (
+          <div className="has-error mb-2">
+            <FieldError message={errors.itemsList} />
           </div>
         )}
-
-        {/* 1. Store */}
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            1 · สาขา <span className={config.color.text}>*</span>
-          </label>
-          <div className="relative border border-divider bg-bg">
-            <select
-              value={storeId ?? ""}
-              onChange={(e) => handleStoreChange(e.target.value)}
-              className="h-[50px] w-full cursor-pointer appearance-none border-0 bg-transparent px-[13px] pr-11 text-[14.5px] font-semibold outline-none"
+        {autoFilled && storeName && (
+          <div className="mk-alert mk-alert--auto mb-2">
+            <RefreshCw />
+            เติมราคาล่าสุดของ {storeName} ให้แล้ว — แก้ได้
+          </div>
+        )}
+        {itemsComputed.map((it, idx) => {
+          const rowErr = errors.items[it.key];
+          const isBottle = it.unit === BOTTLE_UNIT;
+          const n = String(idx + 1).padStart(2, "0");
+          return (
+            <div
+              key={it.key}
+              className={`mk-item ${rowErr ? "has-error" : ""}`}
             >
-              <option value="">— เลือกสาขา —</option>
-              {stores.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={15}
-              strokeWidth={2.2}
-              className="pointer-events-none absolute top-[18px] right-3.5 text-ink/50"
-            />
-          </div>
-          <div className="mt-[7px] text-[11.5px] leading-[1.5] text-ink/50">
-            เลือกสาขาเพื่อดึงราคาที่เคยใช้ล่าสุดของสาขานี้มาเติมให้ (แก้ไขได้)
-          </div>
-          {errors.storeId && (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {errors.storeId}
-            </div>
-          )}
-        </div>
-
-        {/* 2. Items */}
-        <div>
-          <div className="mb-2.5 flex items-baseline justify-between gap-3">
-            <label className="text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              2 · รายการสินค้า <span className={config.color.text}>*</span>
-            </label>
-            <span className="font-num text-[10.5px] text-ink/50">
-              {items.length} รายการ
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {itemsComputed.map((it, idx) => {
-              const rowErr = errors.items[it.key];
-              return (
-                <div key={it.key} className="border border-divider bg-bg">
-                  <div className="flex items-center justify-between gap-2 border-b border-ink/12 py-2 pr-2 pl-[13px]">
-                    <span className="font-num text-[10px] tracking-[.13em] text-ink/50">
-                      รายการ {String(idx + 1).padStart(2, "0")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(it.key)}
-                      disabled={items.length <= 1}
-                      className={`flex h-9 w-9 items-center justify-center border-0 bg-transparent text-danger ${
-                        items.length <= 1 ? "opacity-30" : ""
-                      }`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                  <div className="relative border-b border-ink/12">
-                    <select
-                      value={it.productId ?? ""}
-                      onChange={(e) =>
-                        handleItemProductChange(
-                          it.key,
-                          e.target.value ? Number(e.target.value) : null,
-                        )
-                      }
-                      className="h-12 w-full cursor-pointer appearance-none border-0 bg-transparent px-[13px] pr-10 text-[13.5px] font-semibold outline-none"
-                    >
-                      <option value="">— เลือกสินค้า —</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.unit})
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={14}
-                      strokeWidth={2.2}
-                      className="pointer-events-none absolute top-[17px] right-3.5 text-ink/50"
-                    />
-                  </div>
-                  {rowErr?.productId && (
-                    <div className="border-b border-ink/12 px-[13px] py-[9px] text-[11.5px] leading-[1.4] text-danger">
-                      {rowErr.productId}
-                    </div>
+              <div className="mk-item__h">
+                <span className="mk-item__n">รายการ {n}</span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(it.key)}
+                  disabled={items.length <= 1}
+                  aria-label={`ลบรายการ ${n}`}
+                  className="mk-iconbtn mk-iconbtn--danger h-10! w-10! disabled:opacity-35"
+                >
+                  <Trash2 />
+                </button>
+              </div>
+              <div className={fieldClass(rowErr?.productId)}>
+                <label className="mk-label" htmlFor={`item-${it.key}-product`}>
+                  สินค้า <span className="req">*</span>
+                </label>
+                <select
+                  id={`item-${it.key}-product`}
+                  value={it.productId ?? ""}
+                  onChange={(e) =>
+                    handleItemProductChange(
+                      it.key,
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="mk-input"
+                >
+                  <option value="">— เลือกสินค้า —</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.unit})
+                    </option>
+                  ))}
+                </select>
+                <FieldError message={rowErr?.productId} />
+              </div>
+              <div className="mk-grid2 mt-3">
+                <div className={fieldClass(rowErr?.quantity)}>
+                  <label className="mk-label" htmlFor={`item-${it.key}-qty`}>
+                    {quantityFieldLabel(it.unit)} <span className="req">*</span>
+                  </label>
+                  <input
+                    id={`item-${it.key}-qty`}
+                    value={it.quantity}
+                    onChange={(e) => updateItemQuantity(it.key, e.target.value)}
+                    inputMode={isBottle ? "numeric" : "decimal"}
+                    placeholder="0"
+                    className="mk-input num"
+                  />
+                  {isBottle && !rowErr?.quantity && (
+                    <div className="mk-help">จำนวนเต็มเท่านั้น</div>
                   )}
-                  <div className="grid grid-cols-2">
-                    <div className="border-r border-b border-ink/12">
-                      <div className="px-[13px] pt-2 text-[10px] font-semibold text-ink/50">
-                        {quantityFieldLabel(it.unit)}
-                        {it.unit === BOTTLE_UNIT && " · จำนวนเต็มเท่านั้น"}
-                      </div>
-                      <input
-                        value={it.quantity}
-                        onChange={(e) => updateItemQuantity(it.key, e.target.value)}
-                        inputMode="decimal"
-                        placeholder="0"
-                        className="font-num h-11 w-full border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
-                      />
-                    </div>
-                    <div className="border-b border-ink/12">
-                      <div className="px-[13px] pt-2 text-[10px] font-semibold text-ink/50">
-                        {priceFieldLabel(it.unit)}
-                      </div>
-                      <input
-                        value={it.price}
-                        onChange={(e) => updateItemPrice(it.key, e.target.value)}
-                        inputMode="decimal"
-                        placeholder="0"
-                        className="font-num h-11 w-full border-0 bg-transparent px-[13px] text-[16px] font-bold outline-none"
-                      />
-                    </div>
-                  </div>
-                  {(rowErr?.quantity || rowErr?.price) && (
-                    <div className="border-b border-ink/12 px-[13px] py-[9px] text-[11.5px] leading-[1.4] text-danger">
-                      {[rowErr.quantity, rowErr.price].filter(Boolean).join(" · ")}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-end px-[13px] py-2">
-                    <span className="font-num text-[14.5px] font-bold text-ink/70">
-                      รวม {it.subtotal ? formatBaht(it.subtotal) : "฿0"}
-                    </span>
-                  </div>
+                  <FieldError message={rowErr?.quantity} />
                 </div>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            onClick={addItem}
-            className={`mt-3 flex min-h-12 w-full items-center gap-[9px] border border-accent bg-accent-100 px-3.5 text-[13px] font-semibold text-accent hover:bg-accent-200`}
-          >
-            <Plus size={16} strokeWidth={2.2} />
-            เพิ่มสินค้าอีกรายการ
-          </button>
-          {errors.itemsList && (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {errors.itemsList}
-            </div>
-          )}
-        </div>
-
-        {/* 3. Customer/party name */}
-        <div className="relative">
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            3 · ชื่อ{config.partyLabel} <span className={config.color.text}>*</span>
-          </label>
-          <input
-            value={customerName}
-            onChange={(e) => handleCustomerNameChange(e.target.value)}
-            onFocus={() => setShowCustomerSuggestions(!!customerName.trim())}
-            onBlur={() => setShowCustomerSuggestions(false)}
-            placeholder={`เช่น ร้านขนมป้ามาลี`}
-            autoComplete="off"
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-          {showCustomerSuggestions && customerSuggestions.length > 0 && (
-            <div className="absolute inset-x-0 top-full z-10 mt-1 border border-divider bg-surface shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-              {customerSuggestions.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSelectCustomer(c);
-                  }}
-                  className="block w-full border-b border-ink/12 px-[13px] py-2.5 text-left text-[13.5px] font-semibold last:border-b-0 hover:bg-accent-100"
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {errors.customerName && (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {errors.customerName}
-            </div>
-          )}
-        </div>
-
-        {/* 4. Address */}
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            4 · ที่อยู่{config.partyLabel} <span className={config.color.text}>*</span>
-          </label>
-          <textarea
-            value={customerAddress}
-            onChange={(e) => {
-              setDirty(true);
-              setCustomerAddress(e.target.value);
-            }}
-            rows={2}
-            placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
-            className="w-full resize-none border border-divider bg-bg px-[13px] py-3 text-[15px] leading-[1.5] outline-none"
-          />
-          {addressOptions.length > 1 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {addressOptions.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => {
-                    setDirty(true);
-                    setCustomerAddress(a.address);
-                  }}
-                  className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-left text-[11.5px] leading-[1.4] ${
-                    customerAddress === a.address
-                      ? "border-accent bg-accent-100 text-accent"
-                      : "border-divider bg-bg text-ink/65"
-                  }`}
-                >
-                  <span className="max-w-[180px] truncate">{a.address}</span>
-                  {a.isDefault && (
-                    <span className="flex-none text-[9.5px] font-semibold uppercase opacity-75">
-                      ค่าเริ่มต้น
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          {errors.customerAddress && (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {errors.customerAddress}
-            </div>
-          )}
-        </div>
-
-        {/* 5. Phone */}
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            5 · เบอร์โทรศัพท์{config.partyLabel}
-          </label>
-          <input
-            value={customerPhone}
-            onChange={(e) => {
-              setDirty(true);
-              setCustomerPhone(e.target.value);
-            }}
-            inputMode="tel"
-            placeholder="เช่น 0812345678"
-            autoComplete="off"
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-          {phoneOptions.length > 1 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {phoneOptions.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setDirty(true);
-                    setCustomerPhone(p.phone);
-                  }}
-                  className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-[11.5px] leading-[1.4] ${
-                    customerPhone === p.phone
-                      ? "border-accent bg-accent-100 text-accent"
-                      : "border-divider bg-bg text-ink/65"
-                  }`}
-                >
-                  <span>{p.phone}</span>
-                  {p.isDefault && (
-                    <span className="flex-none text-[9.5px] font-semibold uppercase opacity-75">
-                      ค่าเริ่มต้น
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Discount / shipping — used by both bill types */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              ส่วนลด
-            </label>
-            <input
-              value={discount}
-              onChange={(e) => {
-                setDirty(true);
-                setDiscount(sanitizeNumberInput(e.target.value));
-              }}
-              inputMode="decimal"
-              placeholder="0"
-              className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-            />
-            {errors.discount && (
-              <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-                {errors.discount}
+                <div className={fieldClass(rowErr?.price)}>
+                  <label className="mk-label" htmlFor={`item-${it.key}-price`}>
+                    {priceFieldLabel(it.unit)} <span className="req">*</span>
+                  </label>
+                  <input
+                    id={`item-${it.key}-price`}
+                    value={it.price}
+                    onChange={(e) => updateItemPrice(it.key, e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="mk-input num"
+                  />
+                  <FieldError message={rowErr?.price} />
+                </div>
               </div>
-            )}
-          </div>
-          <div>
-            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              ค่าส่ง
-            </label>
-            <input
-              value={shippingFee}
-              onChange={(e) => {
-                setDirty(true);
-                setShippingFee(sanitizeNumberInput(e.target.value));
-              }}
-              inputMode="decimal"
-              placeholder="0"
-              className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-            />
-            {errors.shippingFee && (
-              <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-                {errors.shippingFee}
+              <div className="mk-item__sum">
+                <span className="num">
+                  {it.product && it.quantity && it.price
+                    ? `${formatQuantity(it.quantity, it.unit)} × ฿${toNumber(it.price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+                    : "กรอกจำนวนและราคา"}
+                </span>
+                <b>รวม {formatBaht(it.subtotal)}</b>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={addItem}
+          className="mk-btn mk-btn--outline mk-btn--block mt-3 border-dashed!"
+        >
+          <Plus />
+          เพิ่มสินค้าอีกรายการ
+        </button>
 
-        {/* Slip — create only; edit manages the slip from the detail page */}
-        {!isEditing && (
-          <div>
-            <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-              สลิปโอนเงิน
-            </label>
-            {slipFile ? (
-              <div className="flex items-stretch gap-3 border border-divider bg-bg p-2.5">
-                <div
-                  className="h-[74px] w-[74px] flex-none border border-ink/15 bg-cover bg-center"
-                  style={{ backgroundImage: `url("${slipPreviewUrl}")` }}
+        {/* Adjustments + slip */}
+        <h2 className="mk-title mt-6 mb-2">ปรับยอด</h2>
+        <div className="mk-card mk-card__pad">
+          <div className="mk-grid2">
+            <div className={fieldClass(errors.discount)}>
+              <label className="mk-label" htmlFor="bill-discount">
+                ส่วนลด <span className="opt">(ไม่บังคับ)</span>
+              </label>
+              <div className="mk-input-wrap">
+                <input
+                  id="bill-discount"
+                  value={discount}
+                  onChange={(e) => {
+                    setDirty(true);
+                    setDiscount(sanitizeNumberInput(e.target.value));
+                    clearError("discount");
+                  }}
+                  inputMode="decimal"
+                  placeholder="0"
+                  className="mk-input num"
                 />
-                <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-                  <div className="truncate text-[12.5px] leading-[1.35] font-semibold">
-                    {slipFile.name}
+                <span className="mk-unit">฿</span>
+              </div>
+              <FieldError message={errors.discount} />
+            </div>
+            <div className={fieldClass(errors.shippingFee)}>
+              <label className="mk-label" htmlFor="bill-shipping">
+                ค่าส่ง <span className="opt">(ไม่บังคับ)</span>
+              </label>
+              <div className="mk-input-wrap">
+                <input
+                  id="bill-shipping"
+                  value={shippingFee}
+                  onChange={(e) => {
+                    setDirty(true);
+                    setShippingFee(sanitizeNumberInput(e.target.value));
+                    clearError("shippingFee");
+                  }}
+                  inputMode="decimal"
+                  placeholder="0"
+                  className="mk-input num"
+                />
+                <span className="mk-unit">฿</span>
+              </div>
+              <FieldError message={errors.shippingFee} />
+            </div>
+          </div>
+
+          {/* Slip — create only; edit manages the slip from the detail page */}
+          {!isEditing && (
+            <div className="mk-field">
+              <div className="mk-label">
+                สลิปโอนเงิน <span className="opt">(ไม่บังคับ)</span>
+              </div>
+              {slipFile ? (
+                <div className="mk-thumbrow">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
+                  <img
+                    src={slipPreviewUrl ?? ""}
+                    alt="สลิปที่แนบ"
+                    className="mk-thumb"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14px] font-semibold">
+                      {slipFile.name}
+                    </div>
+                    <div className="mk-caption">
+                      {(slipFile.size / 1024 / 1024).toFixed(1)} MB ·
+                      อัปโหลดหลังบันทึกบิล
+                    </div>
                   </div>
                   <button
                     type="button"
-                    onClick={clearSlip}
-                    className="self-start border-0 bg-transparent p-0 text-[12px] font-semibold text-danger"
+                    onClick={() => handleSlipChange(null)}
+                    className="mk-btn mk-btn--sm mk-btn--danger-ghost"
                   >
                     ลบสลิป
                   </button>
                 </div>
-              </div>
-            ) : (
-              <label className="box-border flex cursor-pointer items-center gap-3 border border-dashed border-divider bg-bg px-3.5 py-[18px]">
-                <Upload size={20} strokeWidth={1.8} className={config.color.text} />
-                <span className="text-[13px] font-semibold text-ink/60">
+              ) : (
+                <label className="mk-upload min-h-[88px]!">
+                  <Upload />
                   แนบรูปสลิป (ไม่บังคับ)
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => handleSlipChange(e.target.files?.[0] ?? null)}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Summary */}
-      <div className="px-5 pt-[18px] pb-1">
-        <div className="mb-3 text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
-          สรุปยอด · ระบบคำนวณ
+                  <small>JPG · PNG · WebP ไม่เกิน 10 MB</small>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) =>
+                      handleSlipChange(e.target.files?.[0] ?? null)
+                    }
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+          )}
         </div>
-        <div className="border-t-2 border-b-2 border-divider">
-          <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
-            <span className="text-[12.5px] text-ink/60">จำนวนรายการ</span>
-            <span className="font-num text-[14px] font-semibold">
-              {items.length} รายการ
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
-            <span className="text-[12.5px] text-ink/60">ยอดรวมสินค้า</span>
-            <span className="font-num text-[14px] font-semibold">
-              {itemsSubtotal ? formatBaht(itemsSubtotal) : "—"}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3.5 border-b border-ink/12 py-[11px]">
-            <span className="text-[12.5px] text-ink/60">ส่วนลด</span>
-            <span className="font-num text-[14px] font-semibold">
-              {toNumber(discount) ? `− ${formatBaht(discount)}` : "฿0"}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3.5 py-[11px]">
-            <span className="text-[12.5px] text-ink/60">ค่าจัดส่ง</span>
-            <span className="font-num text-[14px] font-semibold">
-              {toNumber(shippingFee) ? `+ ${formatBaht(shippingFee)}` : "฿0"}
-            </span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3.5 py-4">
-            <span className="text-[14px] font-bold">ยอดสุทธิ</span>
-            <span className={`font-num text-[26px] font-bold ${config.color.text}`}>
-              {formatBaht(netTotal)}
-            </span>
-          </div>
-        </div>
-        {netTotal < 0 && (
-          <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-            ยอดสุทธิติดลบ — ส่วนลดมากกว่ายอดรวมสินค้ารวมค่าส่ง
-          </div>
-        )}
-      </div>
 
-      {/* Actions */}
-      <div className="flex gap-2.5 px-5 py-3.5">
+        {/* Summary */}
+        <h2 className="mk-title mt-6 mb-2">สรุปยอด</h2>
+        <div className="mk-card mk-card__pad">
+          <div className="mk-sumrows">
+            <div>
+              <span>จำนวนรายการ</span>
+              <span>{items.length} รายการ</span>
+            </div>
+            <div>
+              <span>ยอดรวมสินค้า</span>
+              <span className="num">
+                {itemsSubtotal ? formatBaht(itemsSubtotal) : "—"}
+              </span>
+            </div>
+            <div>
+              <span>ส่วนลด</span>
+              <span className="num">
+                {toNumber(discount) ? `− ${formatBaht(discount)}` : "฿0"}
+              </span>
+            </div>
+            <div>
+              <span>ค่าจัดส่ง</span>
+              <span className="num">
+                {toNumber(shippingFee) ? `+ ${formatBaht(shippingFee)}` : "฿0"}
+              </span>
+            </div>
+            <div className="is-total">
+              <span>ยอดสุทธิ</span>
+              <span className="num">
+                {netTotal < 0 ? "−" : ""}
+                {formatBaht(Math.abs(netTotal))}
+              </span>
+            </div>
+          </div>
+          {netTotal < 0 && (
+            <div className="mk-alert mk-alert--warning mt-3">
+              <TriangleAlert />
+              ยอดสุทธิติดลบ — ส่วนลดมากกว่ายอดรวมสินค้ารวมค่าส่ง
+            </div>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={handleCancel}
           disabled={submitting}
-          className="min-h-[52px] border border-divider bg-transparent px-[18px] text-[14px] font-semibold disabled:opacity-60"
+          className="mk-btn mk-btn--outline mk-btn--block mt-4"
         >
           ยกเลิก
         </button>
+      </div>
+
+      {/* Sticky footer: net total + save always in reach (spec §7 #2) */}
+      <div className="mk-footer">
+        <div className="mk-footer__total">
+          <small>ยอดสุทธิ · {items.length} รายการ</small>
+          <b>
+            {netTotal < 0 ? "−" : ""}
+            {formatBaht(Math.abs(netTotal))}
+          </b>
+        </div>
         <button
           type="button"
           onClick={handleSubmit}
           disabled={submitting}
-          className={`flex min-h-[52px] flex-1 items-center justify-center gap-2 px-4 text-[15px] font-semibold text-white disabled:opacity-60 ${config.color.bg}`}
+          className="mk-btn mk-btn--type mk-btn--lg"
         >
-          {submitting
-            ? "กำลังบันทึก…"
-            : isEditing
-              ? config.editSubmitLabel
-              : config.submitLabel}
-          <Check size={17} className="ml-auto" />
+          {submitting && <span className="mk-spin" />}
+          {submitLabel}
         </button>
       </div>
 
-      {/* Leave-without-saving confirm */}
-      {confirmLeaveOpen && (
-        <OverlayPortal>
-          <div
-            onClick={() => setConfirmLeaveOpen(false)}
-            className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(10,16,12,0.55)] [animation:fadeIn_0.16s_ease_both]"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[430px] border-t-2 border-divider bg-surface px-5 pt-6 pb-7 [animation:riseIn_0.2s_ease_both]"
-            >
-              <h3 className="text-[20px] leading-[1.3] font-bold">
-                ยกเลิกบิลนี้?
-              </h3>
-              <p className="mt-2.5 mb-5 text-[13px] leading-[1.6] text-ink/60">
-                ข้อมูลที่กรอกไว้จะหายไปทั้งหมด
-              </p>
-              <div className="flex gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setConfirmLeaveOpen(false)}
-                  className="min-h-[50px] flex-1 border border-divider bg-transparent text-[14px] font-semibold"
-                >
-                  กรอกต่อ
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmLeave}
-                  className="min-h-[50px] flex-1 bg-danger text-[14px] font-semibold text-white"
-                >
-                  ยกเลิกบิล
-                </button>
-              </div>
-            </div>
-          </div>
-        </OverlayPortal>
-      )}
+      <ConfirmLeave
+        open={confirmLeaveOpen}
+        title={isEditing ? "ทิ้งการแก้ไข?" : "ยกเลิกบิลนี้?"}
+        body={
+          isEditing
+            ? "การแก้ไขที่ยังไม่บันทึกจะหายไป บิลเดิมยังอยู่ครบ"
+            : "ข้อมูลที่กรอกไว้จะหายไปทั้งหมด"
+        }
+        stayLabel={isEditing ? "แก้ไขต่อ" : "กรอกต่อ"}
+        leaveLabel={isEditing ? "ทิ้งการแก้ไข" : "ยกเลิกบิล"}
+        onStay={() => setConfirmLeaveOpen(false)}
+        onLeave={leave}
+      />
     </div>
   );
 }

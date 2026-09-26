@@ -12,65 +12,58 @@ import { getCurrentProfile } from "@/lib/auth/session";
 // as they're built.
 export default async function AdminPage() {
   const profile = await getCurrentProfile();
-  const fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ");
+  const fullName = [profile.firstName, profile.lastName]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="flex flex-1 flex-col pb-24">
-      <div className="border-b-2 border-divider px-5 pt-[26px] pb-4">
-        <div className="text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          ตั้งค่าร้าน
+      <div className="mk-header">
+        <div>
+          <div className="mk-eyebrow">ตั้งค่าร้าน</div>
+          <h1 className="mk-h1">จัดการ</h1>
         </div>
-        <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          จัดการ
-        </h1>
       </div>
 
-      <div className="border-b-2 border-divider bg-surface">
-        <Link
-          href="/admin/profile"
-          className="flex items-center gap-3 px-5 py-4"
-        >
-          <div className="flex h-11 w-11 flex-none items-center justify-center border border-divider bg-bg text-ink/45">
-            <UserRound size={18} strokeWidth={1.6} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[14.5px] font-semibold">จัดการโปรไฟล์</div>
-            <div className="mt-0.5 truncate text-[11.5px] text-ink/50">
-              {fullName ? `${fullName} · ` : ""}
-              ชื่อ อีเมล ลายเซ็น
-            </div>
-          </div>
-          <ChevronRight size={16} className="flex-none text-ink/35" />
-        </Link>
-        <Link
-          href="/admin/store"
-          className="flex items-center gap-3 border-t border-ink/13 px-5 py-4"
-        >
-          <div className="flex h-11 w-11 flex-none items-center justify-center border border-divider bg-bg text-ink/45">
-            <StoreIcon size={18} strokeWidth={1.6} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[14.5px] font-semibold">จัดการร้านค้า</div>
-            <div className="mt-0.5 text-[11.5px] text-ink/50">
-              ชื่อ โลโก้ ที่อยู่ เบอร์โทร ของแต่ละร้าน
-            </div>
-          </div>
-          <ChevronRight size={16} className="flex-none text-ink/35" />
-        </Link>
-      </div>
-
-      <form action={signOutAction} className="px-5 pt-6">
-        <button
-          type="submit"
-          className="flex min-h-[50px] w-full items-center justify-center gap-2 border border-divider bg-transparent text-[14px] font-semibold text-danger"
-        >
-          <LogOut size={16} />
-          ออกจากระบบ
-        </button>
-        <div className="mt-2.5 text-center text-[11.5px] text-ink/45">
-          เข้าสู่ระบบในชื่อ {profile.email}
+      <div className="flex flex-col gap-4 px-4">
+        <div className="mk-rows">
+          <Link href="/admin/profile" className="mk-menurow">
+            <span className="mk-menurow__ic">
+              <UserRound />
+            </span>
+            <span className="mk-menurow__t">
+              <b>จัดการโปรไฟล์</b>
+              <small className="truncate">
+                {fullName ? `${fullName} · ` : ""}ชื่อ อีเมล ลายเซ็น
+              </small>
+            </span>
+            <ChevronRight className="mk-billrow__chev" />
+          </Link>
+          <Link href="/admin/store" className="mk-menurow">
+            <span className="mk-menurow__ic">
+              <StoreIcon />
+            </span>
+            <span className="mk-menurow__t">
+              <b>จัดการร้านค้า</b>
+              <small>ชื่อ โลโก้ ที่อยู่ เบอร์โทร ของแต่ละร้าน</small>
+            </span>
+            <ChevronRight className="mk-billrow__chev" />
+          </Link>
         </div>
-      </form>
+
+        <form action={signOutAction} className="pt-2">
+          <button
+            type="submit"
+            className="mk-btn mk-btn--outline mk-btn--lg mk-btn--block text-error!"
+          >
+            <LogOut />
+            ออกจากระบบ
+          </button>
+          <p className="mk-caption mt-2 text-center">
+            เข้าสู่ระบบในชื่อ {profile.email}
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

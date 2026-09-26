@@ -32,6 +32,9 @@ export function proxy(request: NextRequest) {
   if (!signedIn && !isPublic) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname + search);
+    // A token that exists but ran out means the session expired mid-use —
+    // the login page says so instead of silently asking to sign in (F2).
+    if (token) loginUrl.searchParams.set("expired", "1");
     const response = NextResponse.redirect(loginUrl);
     if (token) response.cookies.delete(SESSION_COOKIE);
     return response;

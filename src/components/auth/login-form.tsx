@@ -1,30 +1,41 @@
 "use client";
 
 import { useActionState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CircleAlert, Info } from "lucide-react";
 import { signInAction, type SignInState } from "@/app/actions/auth";
 import PasswordInput from "@/components/password-input";
 
 const INITIAL_STATE: SignInState = {};
 
-export default function LoginForm({ next }: { next: string }) {
+export default function LoginForm({
+  next,
+  sessionExpired = false,
+}: {
+  next: string;
+  sessionExpired?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(
     signInAction,
     INITIAL_STATE,
   );
 
   return (
-    <form
-      action={formAction}
-      className="flex flex-col gap-[22px] border-b-2 border-divider bg-surface p-5"
-    >
+    <form action={formAction}>
       <input type="hidden" name="next" value={next} />
 
-      <div>
-        <label
-          htmlFor="login-email"
-          className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase"
-        >
+      {/* F2: a token that ran out mid-use used to drop the owner here with no
+          explanation. */}
+      {sessionExpired && !state.error && (
+        <div className="mk-alert mk-alert--info mb-4">
+          <Info />
+          <span>
+            หมดเวลาเข้าสู่ระบบ — เข้าสู่ระบบอีกครั้งแล้วจะกลับไปหน้าเดิมให้
+          </span>
+        </div>
+      )}
+
+      <div className="mk-field">
+        <label htmlFor="login-email" className="mk-label">
           อีเมล
         </label>
         <input
@@ -36,15 +47,12 @@ export default function LoginForm({ next }: { next: string }) {
           inputMode="email"
           defaultValue={state.email}
           placeholder="name@example.com"
-          className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
+          className="mk-input"
         />
       </div>
 
-      <div>
-        <label
-          htmlFor="login-password"
-          className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase"
-        >
+      <div className="mk-field">
+        <label htmlFor="login-password" className="mk-label">
           รหัสผ่าน
         </label>
         <PasswordInput
@@ -56,21 +64,20 @@ export default function LoginForm({ next }: { next: string }) {
       </div>
 
       {state.error && (
-        <div
-          role="alert"
-          className="border border-danger/40 bg-danger/5 px-[13px] py-2.5 text-[13px] leading-[1.5] text-danger"
-        >
-          {state.error}
+        <div role="alert" className="mk-alert mk-alert--error mt-3">
+          <CircleAlert />
+          <span>{state.error}</span>
         </div>
       )}
 
       <button
         type="submit"
         disabled={pending}
-        className="flex min-h-[52px] items-center justify-center gap-2 bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-60"
+        className="mk-btn mk-btn--primary mk-btn--lg mk-btn--block mt-6"
       >
+        {pending && <span className="mk-spin" />}
         {pending ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
-        <ArrowRight size={17} className="ml-auto" />
+        {!pending && <ArrowRight />}
       </button>
     </form>
   );
