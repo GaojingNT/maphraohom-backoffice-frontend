@@ -3,6 +3,7 @@ import ReceiptPrintToolbar from "@/components/export/receipt-print-toolbar";
 import ResponsivePageScale from "@/components/export/responsive-page-scale";
 import { getBill } from "@/lib/api/bills";
 import { getCurrentProfile } from "@/lib/auth/session";
+import { pdfDateStamp } from "@/lib/export/file-name";
 import { parseIds } from "@/lib/export/parse-ids";
 import {
   formatBaht,
@@ -103,6 +104,11 @@ export default async function ExportReceiptPage({
   ];
   const toolbarTitle =
     documentTitles.length === 1 ? documentTitles[0] : "เอกสารบิล";
+  // ASCII only — some share targets mangle Thai file names.
+  const fileName =
+    bills.length === 1
+      ? `${bills[0].type}-${bills[0].bookNo}-${bills[0].receiptNo}.pdf`
+      : `bills-${pdfDateStamp()}-${bills.length}.pdf`;
 
   return (
     <div className="min-h-dvh bg-[#3d423e]">
@@ -117,6 +123,7 @@ export default async function ExportReceiptPage({
       <ReceiptPrintToolbar
         title={toolbarTitle}
         pagesLabel={`${receipts.length} ใบ · A4 แนวตั้ง`}
+        fileName={fileName}
         slipUrls={preloadUrls}
       />
       <div className="flex justify-center overflow-x-auto px-4 py-6 print:p-0">
@@ -130,6 +137,7 @@ export default async function ExportReceiptPage({
               receipts.map((rc) => (
                 <div
                   key={rc.id}
+                  data-pdf-page=""
                   className="box-border flex h-[297mm] w-[210mm] flex-none flex-col overflow-hidden break-after-page bg-white text-[#16211a] shadow-[0_8px_28px_rgba(0,0,0,0.35)] print:shadow-none"
                 >
                   {/* Top half */}
