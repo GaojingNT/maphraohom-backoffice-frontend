@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Maximize, RefreshCw, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Maximize,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
+  Upload,
+  X,
+} from "lucide-react";
 import { deleteSlip, uploadSlip } from "@/lib/api/bills";
+import { formatDateShort } from "@/lib/format";
 import { useToast } from "@/components/toast-provider";
 import OverlayPortal from "@/components/overlay-portal";
 import { ConfirmDelete } from "@/components/ui/overlay";
@@ -14,11 +22,16 @@ export default function SlipPanel({
   billId,
   receiptNo,
   slipUrl,
+  slipUploadedAt,
+  lightboxRequest = 0,
   onChange,
 }: {
   billId: number;
   receiptNo: number;
   slipUrl: string | null;
+  slipUploadedAt: string | null;
+  /** Bumped by the parent (the ⋯ menu) to open the full-screen view. */
+  lightboxRequest?: number;
   onChange: (slipUrl: string | null) => void;
 }) {
   const { showToast } = useToast();
@@ -26,6 +39,23 @@ export default function SlipPanel({
   const [removing, setRemoving] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+  const [seenRequest, setSeenRequest] = useState(lightboxRequest);
+
+  // Open when the parent asks (adjusting state while rendering, the
+  // React-recommended way to respond to a prop change).
+  if (lightboxRequest !== seenRequest) {
+    setSeenRequest(lightboxRequest);
+    if (slipUrl) setLightboxOpen(true);
+  }
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setLightboxOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [lightboxOpen]);
 
   async function handleFile(file: File | null) {
     if (!file) return;
@@ -76,65 +106,87 @@ export default function SlipPanel({
 
   return (
     <>
-      <div className="mk-card mk-card__pad">
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="mk-title">สลิปโอนเงิน</h2>
-          {slipUrl && !uploading && (
-            <span className="mk-badge bg-receipt-100! text-receipt-600!">
-              แนบแล้ว
-            </span>
-          )}
-        </div>
-
-        {uploading ? (
-          <div className="mk-upload is-busy">
+      {uploading ? (
+        <div className="mk-card p-3.5">
+          <div className="mk-upload is-busy min-h-[72px]!">
             <span className="mk-spin text-sand-700" />
             กำลังอัปโหลด…
           </div>
-        ) : slipUrl ? (
-          <>
-            <button
-              type="button"
-              onClick={() => setLightboxOpen(true)}
-              aria-label="ดูสลิปเต็มจอ"
-              className="mk-slipview block h-[220px] w-full"
-            >
+        </div>
+      ) : slipUrl ? (
+        <div className="mk-card flex items-center gap-3 p-2.5">
+          {/* The whole block opens the slip — no need to hunt for a menu. */}
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label="ดูสลิปเต็มจอ"
+            className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 text-left"
+          >
+            <span className="relative h-[72px] w-14 flex-none overflow-hidden rounded-[10px] border border-line bg-sunken">
               {/* eslint-disable-next-line @next/next/no-img-element -- slip served by the API gateway */}
               <img
                 src={slipUrl}
-                alt="สลิปโอนเงิน"
+                alt=""
                 className="h-full w-full object-cover object-top"
               />
-              <span className="mk-slipview__hint">
-                <Maximize size={14} />
+              <span className="absolute right-[3px] bottom-[3px] grid h-5 w-5 place-items-center rounded-md bg-ink/70 text-white">
+                <Maximize size={12} strokeWidth={2.4} />
+              </span>
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-semibold">
+                สลิปโอนเงิน
+              </span>
+              {slipUploadedAt && (
+                <span className="mk-caption block">
+                  แนบเมื่อ {formatDateShort(slipUploadedAt)} ·{" "}
+                  {new Date(slipUploadedAt).toLocaleTimeString("th-TH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                  น.
+                </span>
+              )}
+              <span className="block text-[12px] font-semibold text-ocean-700">
                 แตะเพื่อดูเต็มจอ
               </span>
-            </button>
-            <div className="mk-grid2 mt-2.5">
-              <label className="mk-btn mk-btn--outline cursor-pointer">
-                <RefreshCw />
-                เปลี่ยนสลิป
-                {fileInput}
-              </label>
-              <button
-                type="button"
-                onClick={() => setConfirmRemoveOpen(true)}
-                className="mk-btn mk-btn--outline text-error!"
-              >
-                <Trash2 />
-                ลบสลิป
-              </button>
-            </div>
-          </>
-        ) : (
-          <label className="mk-upload">
-            <Upload />
-            แตะเพื่อแนบสลิป
-            <small>JPG · PNG · WebP ไม่เกิน 10 MB</small>
+            </span>
+          </button>
+          <label
+            className="mk-iconbtn cursor-pointer"
+            aria-label="เปลี่ยนสลิป"
+            title="เปลี่ยนสลิป"
+          >
+            <RefreshCw size={18} />
             {fileInput}
           </label>
-        )}
-      </div>
+          <button
+            type="button"
+            aria-label="ลบสลิป"
+            onClick={() => setConfirmRemoveOpen(true)}
+            className="mk-iconbtn mk-iconbtn--danger"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
+      ) : (
+        <div className="mk-card border-[#f3dfa8]! bg-warning-100! p-3.5">
+          <div className="flex items-start gap-2.5 text-[14px] leading-5 text-warning-700">
+            <TriangleAlert size={18} className="mt-px flex-none" />
+            <div>
+              <b>ยังไม่มีสลิปโอนเงิน</b>
+              <div className="text-[12px]">
+                แนบตอนนี้เพื่อให้ใบเสร็จมีหลักฐานการชำระเงิน
+              </div>
+            </div>
+          </div>
+          <label className="mk-btn mk-btn--primary mk-btn--block mt-3 cursor-pointer">
+            <Upload />
+            แนบสลิป
+            {fileInput}
+          </label>
+        </div>
+      )}
 
       {lightboxOpen && slipUrl && (
         <OverlayPortal>
