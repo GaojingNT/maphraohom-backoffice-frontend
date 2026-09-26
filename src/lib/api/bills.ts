@@ -44,8 +44,15 @@ async function throwApiError(res: Response, fallback: string): Promise<never> {
   throw new ApiError(body?.message || fallback, body?.errors ?? []);
 }
 
-export async function getBills(): Promise<BillListItem[]> {
-  const res = await apiFetch(`/bills?limit=${LIST_FETCH_LIMIT}`, {
+// storeId narrows the fetch server-side (GET /bills?storeId=), so one
+// store's list is complete even when all stores together pass
+// LIST_FETCH_LIMIT. The list's other filters still run client-side.
+export async function getBills(
+  filter: { storeId?: number | null } = {},
+): Promise<BillListItem[]> {
+  const params = new URLSearchParams({ limit: String(LIST_FETCH_LIMIT) });
+  if (filter.storeId != null) params.set("storeId", String(filter.storeId));
+  const res = await apiFetch(`/bills?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) {

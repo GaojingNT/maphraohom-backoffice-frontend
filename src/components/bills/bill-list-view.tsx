@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { startTransition, useMemo, useOptimistic, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
@@ -24,7 +24,7 @@ import {
 import { formatBaht } from "@/lib/format";
 import { toNumber } from "@/lib/money";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
-import type { BillListItem } from "@/lib/types";
+import type { BillListItem, Store } from "@/lib/types";
 import { Sheet } from "@/components/ui/overlay";
 import BillTypeSheet from "@/components/bills/bill-type-sheet";
 
@@ -117,18 +117,24 @@ export interface BillListFilter {
 
 export default function BillListView({
   bills,
+  stores,
   initialFilter,
 }: {
   bills: BillListItem[];
+  stores: Store[];
   initialFilter?: BillListFilter;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [now] = useState(() => Date.now());
   const [page, setPage] = useState(1);
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
-  const [storeId, setStoreId] = useState<number | null>(
-    initialFilter?.storeId ?? null,
-  );
+  // The store filter lives in the URL (?store=) and is applied by the server
+  // fetch, so `bills` is already that store's complete list. The optimistic
+  // copy highlights the tapped chip while the new list loads.
+  const storeId = initialFilter?.storeId ?? null;
+  const [shownStoreId, setShownStoreId] = useOptimistic(storeId);
+  const [storeLoading, setStoreLoading] = useOptimistic(false);
   const [search, setSearch] = useState("");
   const [searchBy, setSearchBy] = useState<SearchBy>("customer_name");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -145,25 +151,14 @@ export default function BillListView({
   // and deliberately untouched by page/search/filter changes, so a
   // selection made under one filter survives switching to another.
   const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<Record<number, true>>({});
+  // Holds the bill itself, not just `true`: switching store refetches
+  // `bills`, and bills picked under another store must still export.
+  const [selected, setSelected] = useState<Record<number, BillListItem>>({});
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
-  // Stores that appear in the list — the filter chips only show when there
-  // is more than one to choose from.
-  const stores = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const b of bills) map.set(b.storeId, b.storeName);
-    return [...map.entries()].map(([id, name]) => ({ id, name }));
-  }, [bills]);
-
   const base = useMemo(
-    () =>
-      bills.filter(
-        (b) =>
-          (typeTab === "all" || b.type === typeTab) &&
-          (storeId == null || b.storeId === storeId),
-      ),
-    [bills, typeTab, storeId],
+    () => bills.filter((b) => typeTab === "all" || b.type === typeTab),
+    [bills, typeTab],
   );
 
   const periodsForMode = useMemo(() => {
@@ -230,7 +225,7 @@ export default function BillListView({
     return out;
   }, [slice, now]);
 
-  const selectedBills = bills.filter((b) => selected[b.id]);
+  const selectedBills = Object.values(selected);
   const selectedCount = selectedBills.length;
   const selectedTotal = selectedBills.reduce(
     (a, b) => a + toNumber(b.total),
@@ -244,14 +239,31 @@ export default function BillListView({
     setPage(1);
   }
 
+  // Navigates to ?store= (keeping the URL's other params) so the server
+  // refetches that store's bills. The period resets to the new list's
+  // latest one; search, type tab and selection carry over.
+  function selectStore(id: number | null) {
+    setFilterPeriod(null);
+    resetPage();
+    const params = new URLSearchParams(searchParams.toString());
+    if (id == null) params.delete("store");
+    else params.set("store", String(id));
+    const query = params.toString();
+    startTransition(() => {
+      setShownStoreId(id);
+      setStoreLoading(true);
+      router.push(query ? `/?${query}` : "/", { scroll: false });
+    });
+  }
+
   function clearEverything() {
     setSearch("");
     setSearchOpen(false);
     setFilterMode("all");
     setFilterPeriod(null);
-    setStoreId(null);
     setTypeTab("all");
     setPage(1);
+    if (storeId != null) selectStore(null);
   }
 
   function toggleSelectMode() {
@@ -270,17 +282,17 @@ export default function BillListView({
     setSelected((prev) => {
       const next = { ...prev };
       slice.forEach((b) => {
-        next[b.id] = true;
+        next[b.id] = b;
       });
       return next;
     });
   }
 
-  function toggleSelected(id: number) {
+  function toggleSelected(bill: BillListItem) {
     setSelected((prev) => {
       const next = { ...prev };
-      if (next[id]) delete next[id];
-      else next[id] = true;
+      if (next[bill.id]) delete next[bill.id];
+      else next[bill.id] = bill;
       return next;
     });
   }
@@ -523,12 +535,8 @@ export default function BillListView({
             <button
               type="button"
               className="mk-chip mk-chip--sm"
-              aria-pressed={storeId == null}
-              onClick={() => {
-                setStoreId(null);
-                setFilterPeriod(null);
-                resetPage();
-              }}
+              aria-pressed={shownStoreId == null}
+              onClick={() => selectStore(null)}
             >
               ทุกร้าน
             </button>
@@ -537,12 +545,8 @@ export default function BillListView({
                 key={s.id}
                 type="button"
                 className="mk-chip mk-chip--sm"
-                aria-pressed={storeId === s.id}
-                onClick={() => {
-                  setStoreId(s.id);
-                  setFilterPeriod(null);
-                  resetPage();
-                }}
+                aria-pressed={shownStoreId === s.id}
+                onClick={() => selectStore(s.id)}
               >
                 {s.name}
               </button>
@@ -551,8 +555,28 @@ export default function BillListView({
         )}
       </div>
 
-      <div className="px-4 pb-6">
-        {bills.length === 0 ? (
+      <div
+        aria-busy={storeLoading}
+        className={`px-4 pb-6 transition-opacity ${storeLoading ? "opacity-50" : ""}`}
+      >
+        {bills.length === 0 && storeId != null ? (
+          <div className="mk-card mt-4">
+            <div className="mk-empty">
+              <div className="mk-empty__ic">
+                <Inbox />
+              </div>
+              <h3>ร้านนี้ยังไม่มีบิล</h3>
+              <p>เลือกร้านอื่น หรือดูบิลของทุกร้าน</p>
+              <button
+                type="button"
+                className="mk-btn mk-btn--outline"
+                onClick={() => selectStore(null)}
+              >
+                ดูทุกร้าน
+              </button>
+            </div>
+          </div>
+        ) : bills.length === 0 ? (
           <div className="mk-card mt-4">
             <div className="mk-empty">
               <div className="mk-empty__ic">
@@ -602,7 +626,7 @@ export default function BillListView({
                       bill={bill}
                       selectMode={selectMode}
                       selected={!!selected[bill.id]}
-                      onToggle={() => toggleSelected(bill.id)}
+                      onToggle={() => toggleSelected(bill)}
                     />
                   ))}
                 </div>
