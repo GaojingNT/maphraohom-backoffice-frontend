@@ -3,13 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, ChevronLeft } from "lucide-react";
+import { Check, CircleAlert, UserRound } from "lucide-react";
 import { deleteLogo, updateStore, uploadLogo } from "@/lib/api/stores";
 import { useToast } from "@/components/toast-provider";
 import ImageUploadPanel from "@/components/admin/image-upload-panel";
+import TopBar, { PageHeading } from "@/components/ui/top-bar";
 import type { Store } from "@/lib/types";
 
-export default function StoreEditView({ store: initialStore }: { store: Store }) {
+export default function StoreEditView({
+  store: initialStore,
+}: {
+  store: Store;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
   const [store, setStore] = useState(initialStore);
@@ -22,7 +27,7 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
   async function handleSubmit() {
     if (!name.trim()) {
       setNameError("กรอกชื่อร้าน");
-      showToast("กรอกข้อมูลให้ครบก่อนบันทึก");
+      showToast("กรอกข้อมูลให้ครบก่อนบันทึก", "error");
       return;
     }
     setNameError(undefined);
@@ -38,73 +43,94 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
       showToast("บันทึกข้อมูลร้านแล้ว");
       router.push("/admin/store");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+      showToast(
+        err instanceof Error ? err.message : "บันทึกไม่สำเร็จ",
+        "error",
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="flex flex-1 flex-col pb-28 [animation:riseIn_0.22s_ease_both]">
-      <div className="border-b-2 border-divider bg-surface px-5 pt-4 pb-[18px]">
-        <Link
-          href="/admin/store"
-          className="flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold text-accent"
-        >
-          <ChevronLeft size={16} />
-          กลับ
-        </Link>
-        <div className="mt-2 text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          ข้อมูลร้านค้า
-        </div>
-        <h1 className="mt-2.5 text-[26px] leading-[1.25] font-bold">
-          {store.name}
-        </h1>
-      </div>
+    <div className="flex flex-1 flex-col pb-28">
+      <TopBar backHref="/admin/store" />
+      <div className="flex flex-col gap-4 px-4">
+        <PageHeading eyebrow="ข้อมูลร้านค้า" title={store.name} />
 
-      <div className="flex flex-col gap-[22px] border-b-2 border-divider bg-surface p-5">
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            ชื่อร้าน <span className="text-accent">*</span>
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="ชื่อร้าน"
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
-          {nameError && (
-            <div className="mt-2 text-[11.5px] leading-[1.4] text-danger">
-              {nameError}
-            </div>
-          )}
+        <div className="mk-card mk-card__pad">
+          <div className={`mk-field ${nameError ? "has-error" : ""}`}>
+            <label htmlFor="store-name" className="mk-label">
+              ชื่อร้าน <span className="req">*</span>
+            </label>
+            <input
+              id="store-name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameError(undefined);
+              }}
+              placeholder="ชื่อร้าน"
+              className="mk-input"
+            />
+            {nameError && (
+              <div className="mk-err">
+                <CircleAlert />
+                {nameError}
+              </div>
+            )}
+          </div>
+
+          <div className="mk-field">
+            <label htmlFor="store-address" className="mk-label">
+              ที่อยู่
+            </label>
+            <textarea
+              id="store-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              rows={2}
+              placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
+              className="mk-input"
+            />
+          </div>
+
+          <div className="mk-field">
+            <label htmlFor="store-phone" className="mk-label">
+              เบอร์โทรศัพท์
+            </label>
+            <input
+              id="store-phone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              type="tel"
+              inputMode="tel"
+              placeholder="เช่น 0812345678"
+              autoComplete="off"
+              className="mk-input num"
+            />
+          </div>
+          <div className="mk-help">
+            ชื่อ โลโก้ ที่อยู่ และเบอร์ร้าน จะพิมพ์บนหัวใบเสร็จทุกใบของร้านนี้
+          </div>
         </div>
 
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            ที่อยู่
-          </label>
-          <textarea
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            rows={2}
-            placeholder="บ้านเลขที่ ตำบล อำเภอ จังหวัด"
-            className="w-full resize-none border border-divider bg-bg px-[13px] py-3 text-[15px] leading-[1.5] outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2.5 block text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-            เบอร์โทรศัพท์
-          </label>
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            inputMode="tel"
-            placeholder="เช่น 0812345678"
-            autoComplete="off"
-            className="h-12 w-full border border-divider bg-bg px-[13px] text-[15px] outline-none"
-          />
+        <div className="mk-grid2">
+          <Link
+            href="/admin/store"
+            className="mk-btn mk-btn--outline mk-btn--lg"
+          >
+            ยกเลิก
+          </Link>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="mk-btn mk-btn--primary mk-btn--lg"
+          >
+            {submitting ? <span className="mk-spin" /> : <Check />}
+            {submitting ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
         </div>
 
         <ImageUploadPanel
@@ -114,57 +140,40 @@ export default function StoreEditView({ store: initialStore }: { store: Store })
           onDelete={() => deleteLogo(store.id)}
           onChange={(logo) => setStore((s) => ({ ...s, logo: logo ?? "" }))}
           emptyLabel="แตะเพื่ออัปโหลดโลโก้"
+          deleteBody="หัวใบเสร็จของร้านนี้จะแสดงเฉพาะชื่อร้าน"
+          variant="square"
         />
-      </div>
 
-      <div className="border-b-2 border-divider bg-surface px-5 py-[18px]">
-        <div className="mb-2.5 text-[10px] font-semibold tracking-[.13em] text-ink/55 uppercase">
-          เจ้าของร้าน
-        </div>
-        {store.owners && store.owners.length > 0 ? (
-          <ul className="flex flex-col">
-            {store.owners.map((owner) => {
-              const fullName = [owner.firstName, owner.lastName]
-                .filter(Boolean)
-                .join(" ");
-              return (
-                <li
-                  key={owner.id}
-                  className="border-t border-ink/13 py-2.5 first:border-t-0 first:pt-0"
-                >
-                  <div className="text-[14px] font-semibold">
-                    {fullName || owner.email}
-                  </div>
-                  {fullName && (
-                    <div className="mt-0.5 text-[11.5px] text-ink/50">
-                      {owner.email}
+        <div className="mk-card mk-card__pad">
+          <h2 className="mk-title mb-2">เจ้าของร้าน</h2>
+          {store.owners && store.owners.length > 0 ? (
+            <ul className="flex flex-col gap-2.5">
+              {store.owners.map((owner) => {
+                const fullName = [owner.firstName, owner.lastName]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <li key={owner.id} className="flex items-center gap-3">
+                    <span className="mk-menurow__ic h-9! w-9!">
+                      <UserRound size={18} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold">
+                        {fullName || owner.email}
+                      </div>
+                      {fullName && (
+                        <div className="mk-caption truncate">{owner.email}</div>
+                      )}
                     </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <div className="text-[13px] text-ink/50">ยังไม่มีเจ้าของร้าน</div>
-        )}
-      </div>
-
-      <div className="flex gap-2.5 px-5 py-3.5">
-        <Link
-          href="/admin/store"
-          className="flex min-h-[52px] items-center border border-divider bg-transparent px-[18px] text-[14px] font-semibold"
-        >
-          ยกเลิก
-        </Link>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="flex min-h-[52px] flex-1 items-center justify-center gap-2 bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-60"
-        >
-          {submitting ? "กำลังบันทึก…" : "บันทึก"}
-          <Check size={17} className="ml-auto" />
-        </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-[14px] text-ink-muted">ยังไม่มีเจ้าของร้าน</p>
+          )}
+          <div className="mk-help">แสดงอย่างเดียว</div>
+        </div>
       </div>
     </div>
   );

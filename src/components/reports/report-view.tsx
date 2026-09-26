@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { formatBaht, formatDateShort } from "@/lib/format";
 import { toNumber } from "@/lib/money";
-import { BILL_TYPE_CONFIG } from "@/lib/bill-type";
 import type { BillListItem, Store } from "@/lib/types";
 
 type Range = "7d" | "30d" | "1y";
@@ -11,13 +12,13 @@ type Range = "7d" | "30d" | "1y";
 const RANGES: { key: Range; label: string }[] = [
   { key: "7d", label: "7 วัน" },
   { key: "30d", label: "30 วัน" },
-  { key: "1y", label: "ทั้งปี" },
+  { key: "1y", label: "12 เดือน" },
 ];
 
 const RANGE_LABEL: Record<Range, string> = {
   "7d": "7 วันล่าสุด",
   "30d": "30 วันล่าสุด",
-  "1y": "ปีนี้",
+  "1y": "12 เดือนล่าสุด",
 };
 
 const DAY_MS = 86400000;
@@ -36,6 +37,81 @@ function incomeExpense(bills: BillListItem[]) {
   return { income, expense, net: income - expense };
 }
 
+function signedBaht(n: number) {
+  return (n < 0 ? "−" : "") + formatBaht(Math.abs(n));
+}
+
+function compactBaht(n: number) {
+  if (n >= 1000000) return `฿${+(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `฿${+(n / 1000).toFixed(1)}k`;
+  return `฿${Math.round(n)}`;
+}
+
+interface Bucket {
+  label: string;
+  longLabel: string;
+  start: number;
+  end: number;
+  /** Bill-list filter this bar opens, when it maps onto one exactly. */
+  href: string | null;
+}
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function buildBuckets(range: Range, now: number): Bucket[] {
+  const today = new Date(now);
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  ).getTime();
+  const out: Bucket[] = [];
+  if (range === "7d") {
+    for (let i = 6; i >= 0; i--) {
+      const start = startOfToday - i * DAY_MS;
+      const d = new Date(start);
+      out.push({
+        label: String(d.getDate()),
+        longLabel: formatDateShort(d.toISOString()),
+        start,
+        end: start + DAY_MS,
+        href: `/?mode=day&period=${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      });
+    }
+  } else if (range === "30d") {
+    for (let i = 5; i >= 0; i--) {
+      const end = startOfToday + DAY_MS - i * 5 * DAY_MS;
+      const start = end - 5 * DAY_MS;
+      out.push({
+        label: formatDateShort(new Date(start).toISOString()),
+        longLabel: `${formatDateShort(new Date(start).toISOString())} – ${formatDateShort(new Date(end - DAY_MS).toISOString())}`,
+        start,
+        end,
+        href: null,
+      });
+    }
+  } else {
+    // Calendar months, oldest first, ending with the current month.
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const next = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
+      out.push({
+        label: d.toLocaleDateString("th-TH", { month: "short" }),
+        longLabel: d.toLocaleDateString("th-TH", {
+          month: "long",
+          year: "2-digit",
+        }),
+        start: d.getTime(),
+        end: next.getTime(),
+        href: `/?mode=month&period=${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
+      });
+    }
+  }
+  return out;
+}
+
 export default function ReportView({
   bills,
   stores,
@@ -44,40 +120,41 @@ export default function ReportView({
   stores: Store[];
 }) {
   const [range, setRange] = useState<Range>("7d");
+  const [activeBar, setActiveBar] = useState<number | null>(null);
   // Captured once per mount rather than read live during render, per
   // react-hooks/purity — the report doesn't need to tick in real time.
   const [now] = useState(() => Date.now());
 
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : 365;
-  const since = now - days * DAY_MS;
-  const inRange = bills.filter((b) => new Date(b.createdAt).getTime() >= since);
-
+  const buckets = buildBuckets(range, now).map((b) => {
+    const rows = bills.filter((bill) => {
+      const t = new Date(bill.createdAt).getTime();
+      return t >= b.start && t < b.end;
+    });
+    return { ...b, ...incomeExpense(rows) };
+  });
+  const rangeStart = buckets[0].start;
+  const rangeEnd = buckets[buckets.length - 1].end;
+  const inRange = bills.filter((b) => {
+    const t = new Date(b.createdAt).getTime();
+    return t >= rangeStart && t < rangeEnd;
+  });
   const { income, expense, net } = incomeExpense(inRange);
 
-  const bucketCount = range === "7d" ? 7 : range === "30d" ? 6 : 12;
-  const bucketSpanDays = range === "7d" ? 1 : range === "30d" ? 5 : 30;
-  const buckets = [];
-  for (let i = bucketCount - 1; i >= 0; i--) {
-    const end = now - i * bucketSpanDays * DAY_MS;
-    const start = end - bucketSpanDays * DAY_MS;
-    const inBucket = inRange.filter((b) => {
-      const t = new Date(b.createdAt).getTime();
-      return t > start && t <= end;
-    });
-    const { income: bucketIncome, expense: bucketExpense } = incomeExpense(inBucket);
-    buckets.push({
-      label: formatDateShort(new Date(end).toISOString()),
-      income: bucketIncome,
-      expense: bucketExpense,
-    });
-  }
-  const maxBucket = Math.max(1, ...buckets.map((b) => Math.max(b.income, b.expense)));
+  const maxBucket = Math.max(
+    1,
+    ...buckets.map((b) => Math.max(b.income, b.expense)),
+  );
+  const tip = activeBar != null ? buckets[activeBar] : null;
 
   const storeAgg = stores
     .map((store) => {
       const rows = inRange.filter((b) => b.storeId === store.id);
-      const agg = incomeExpense(rows);
-      return { name: store.name, count: rows.length, ...agg };
+      return {
+        id: store.id,
+        name: store.name,
+        count: rows.length,
+        ...incomeExpense(rows),
+      };
     })
     .sort((a, b) => b.net - a.net);
   const maxStoreValue = Math.max(
@@ -87,156 +164,196 @@ export default function ReportView({
 
   return (
     <div className="flex flex-1 flex-col pb-24">
-      {/* Header */}
-      <div className="border-b-2 border-divider px-5 pt-[26px] pb-4">
-        <div className="text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          สรุปรายได้
-        </div>
-        <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          รายงาน
-        </h1>
-      </div>
-
-      {/* Range picker */}
-      <div className="flex border-b-2 border-divider bg-surface">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            type="button"
-            onClick={() => setRange(r.key)}
-            className={`min-h-12 flex-1 border-0 border-r border-ink/12 px-3.5 text-left text-[12.5px] font-semibold last:border-r-0 ${
-              range === r.key ? "bg-accent text-white" : "text-ink/62"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Income / expense / net block */}
-      <div className="border-b-2 border-divider bg-ink px-5 py-[22px] text-white">
-        <div className="text-[10px] leading-none font-semibold tracking-[.18em] uppercase opacity-90">
-          สรุป · {RANGE_LABEL[range]}
-        </div>
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          <div>
-            <div className={`text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase ${BILL_TYPE_CONFIG.receipt.color.text}`}>
-              {BILL_TYPE_CONFIG.receipt.title}
-            </div>
-            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
-              {formatBaht(income)}
-            </div>
-          </div>
-          <div>
-            <div className={`text-[9.5px] leading-none font-semibold tracking-[.12em] uppercase ${BILL_TYPE_CONFIG.payment.color.text}`}>
-              {BILL_TYPE_CONFIG.payment.title}
-            </div>
-            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
-              {formatBaht(expense)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[9.5px] leading-none font-semibold tracking-[.12em] text-white/70 uppercase">
-              สุทธิ
-            </div>
-            <div className="font-num mt-[7px] text-[19px] leading-[1.1] font-bold">
-              {net < 0 ? "− " : ""}
-              {formatBaht(Math.abs(net))}
-            </div>
-          </div>
-        </div>
-        <div className="mt-4 border-t border-white/25 pt-3 text-[11px] leading-[1.4] opacity-80">
-          {inRange.length.toLocaleString("en-US")} บิล
+      <div className="mk-header">
+        <div>
+          <div className="mk-eyebrow">สรุปรายได้</div>
+          <h1 className="mk-h1">รายงาน</h1>
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="border-b-2 border-divider bg-surface px-5 py-5">
-        <div className="mb-4 flex items-center justify-between gap-3 text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
-          <span>รับ/จ่ายตามช่วงเวลา</span>
-          <span className="flex items-center gap-3 normal-case">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 bg-accent" />รับเงิน
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 bg-payment" />จ่ายเงิน
-            </span>
-          </span>
-        </div>
-        <div className="flex h-[150px] items-end gap-1.5 border-b-2 border-divider">
-          {buckets.map((b, i) => {
-            const incomeH = Math.max(b.income > 0 ? 3 : 0, Math.round((b.income / maxBucket) * 120));
-            const expenseH = Math.max(b.expense > 0 ? 3 : 0, Math.round((b.expense / maxBucket) * 120));
-            return (
-              <div key={i} className="flex h-full min-w-0 flex-1 items-end gap-[2px]">
-                <div
-                  className="min-w-0 flex-1 bg-accent transition-[height] duration-[350ms] ease-in-out"
-                  style={{ height: `${incomeH}px` }}
-                />
-                <div
-                  className="min-w-0 flex-1 bg-payment transition-[height] duration-[350ms] ease-in-out"
-                  style={{ height: `${expenseH}px` }}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-2 flex gap-1.5">
-          {buckets.map((b, i) => (
-            <div
-              key={i}
-              className="min-w-0 flex-1 overflow-hidden text-center text-[9.5px] text-ink/50"
+      <div className="flex flex-col gap-4 px-4 pb-6">
+        <div className="mk-seg" role="group" aria-label="ช่วงเวลา">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              className="is-sand"
+              aria-pressed={range === r.key}
+              onClick={() => {
+                setRange(r.key);
+                setActiveBar(null);
+              }}
             >
-              {b.label}
-            </div>
+              {r.label}
+            </button>
           ))}
         </div>
-      </div>
 
-      {/* By store */}
-      <div className="px-5 py-5">
-        <div className="mb-4 text-[10px] font-semibold tracking-[.14em] text-ink/50 uppercase">
-          แยกตามสาขา
-        </div>
-        <div className="flex flex-col gap-[18px]">
-          {storeAgg.map((s) => (
-            <div key={s.name}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[14px] font-semibold">{s.name}</span>
-                <span className="font-num text-[13px] text-ink/55">
-                  {s.count} บิล
-                </span>
+        {/* Summary */}
+        <div className="mk-card mk-card__pad">
+          <div className="flex items-baseline justify-between">
+            <span className="mk-caption text-[13px]! font-semibold">
+              สรุป · {RANGE_LABEL[range]}
+            </span>
+            <span className="mk-caption">
+              {inRange.length.toLocaleString("en-US")} บิล
+            </span>
+          </div>
+          <div className="mt-1.5">
+            <div className="mk-caption">สุทธิ</div>
+            <div className="num text-[32px] leading-[38px] font-bold">
+              {signedBaht(net)}
+            </div>
+          </div>
+          <div className="mk-grid2 mt-3">
+            <div className="rounded-md bg-receipt-100 px-3 py-2.5">
+              <div className="mk-caption flex items-center gap-1 font-semibold text-receipt-600!">
+                <ArrowDown size={14} strokeWidth={2.4} /> บิลรับเงิน
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="w-9 flex-none text-[9.5px] font-semibold text-accent">
-                  รับ
-                </span>
-                <div className="h-2.5 flex-1 bg-ink/10">
-                  <div
-                    className="h-full bg-accent transition-[width] duration-[400ms] ease-in-out"
-                    style={{ width: `${Math.round((s.income / maxStoreValue) * 100)}%` }}
-                  />
-                </div>
-                <span className="font-num w-20 flex-none text-right text-[11px] font-semibold">
-                  {formatBaht(s.income)}
-                </span>
-              </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="w-9 flex-none text-[9.5px] font-semibold text-payment">
-                  จ่าย
-                </span>
-                <div className="h-2.5 flex-1 bg-ink/10">
-                  <div
-                    className="h-full bg-payment transition-[width] duration-[400ms] ease-in-out"
-                    style={{ width: `${Math.round((s.expense / maxStoreValue) * 100)}%` }}
-                  />
-                </div>
-                <span className="font-num w-20 flex-none text-right text-[11px] font-semibold">
-                  {formatBaht(s.expense)}
-                </span>
+              <div className="num text-[18px] font-bold text-receipt-600">
+                {formatBaht(income)}
               </div>
             </div>
-          ))}
+            <div className="rounded-md bg-payment-100 px-3 py-2.5">
+              <div className="mk-caption flex items-center gap-1 font-semibold text-payment-700!">
+                <ArrowUp size={14} strokeWidth={2.4} /> บิลจ่ายเงิน
+              </div>
+              <div className="num text-[18px] font-bold text-payment-700">
+                {formatBaht(expense)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div className="mk-card mk-card__pad">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="mk-title">รับ/จ่ายตามช่วงเวลา</h2>
+            <div className="mk-legend">
+              <span>
+                <i className="bg-receipt-600" />
+                รับเงิน
+              </span>
+              <span>
+                <i className="bg-payment-600" />
+                จ่ายเงิน
+              </span>
+            </div>
+          </div>
+          <div className="relative mt-3">
+            {tip && (
+              <div className="mk-tooltip">
+                <b>{tip.longLabel}</b>
+                <div className="flex justify-between">
+                  <span>รับ</span>
+                  <span className="num font-semibold">
+                    {formatBaht(tip.income)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>จ่าย</span>
+                  <span className="num font-semibold">
+                    {formatBaht(tip.expense)}
+                  </span>
+                </div>
+                {tip.href && (
+                  <Link
+                    href={tip.href}
+                    className="mk-btn mk-btn--sm mt-1.5 w-full bg-white/15! text-white!"
+                  >
+                    ดูบิลช่วงนี้
+                    <ChevronRight />
+                  </Link>
+                )}
+              </div>
+            )}
+            <div className="flex gap-1.5">
+              <div className="num flex h-[150px] min-w-[34px] flex-col justify-between pb-[22px] text-right text-[10px] text-ink-muted">
+                <span>{compactBaht(maxBucket)}</span>
+                <span>{compactBaht(maxBucket / 2)}</span>
+                <span>0</span>
+              </div>
+              <div className="mk-bars min-w-0 flex-1">
+                {buckets.map((b, i) => (
+                  <button
+                    key={b.start}
+                    type="button"
+                    aria-label={`${b.longLabel} รับ ${formatBaht(b.income)} จ่าย ${formatBaht(b.expense)}`}
+                    aria-pressed={activeBar === i}
+                    className={`mk-bars__g ${activeBar === i ? "is-hl" : ""}`}
+                    onClick={() => setActiveBar(activeBar === i ? null : i)}
+                  >
+                    <span className="mk-bars__pair">
+                      <i
+                        className="mk-bars__b in transition-[height] duration-300"
+                        style={{
+                          height: `${Math.round((b.income / maxBucket) * 100)}%`,
+                        }}
+                      />
+                      <i
+                        className="mk-bars__b out transition-[height] duration-300"
+                        style={{
+                          height: `${Math.round((b.expense / maxBucket) * 100)}%`,
+                        }}
+                      />
+                    </span>
+                    <span className="mk-bars__l">{b.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mk-caption mt-2">
+            แตะแท่งเพื่อดูยอดและรายการบิลของช่วงนั้น
+          </div>
+        </div>
+
+        {/* By store */}
+        <div className="mk-card mk-card__pad">
+          <h2 className="mk-title mb-3">แยกตามร้าน</h2>
+          <div className="mk-storebreak">
+            {storeAgg.map((s) => (
+              <Link key={s.id} href={`/?store=${s.id}`} className="block">
+                <div className="flex items-baseline justify-between gap-2">
+                  <b className="truncate text-[15px]">{s.name}</b>
+                  <span className="mk-caption flex-none">
+                    {s.count} บิล · สุทธิ{" "}
+                    <span className="num font-semibold text-ink">
+                      {signedBaht(s.net)}
+                    </span>
+                  </span>
+                </div>
+                <div className="mk-meterrow">
+                  <span>รับ</span>
+                  <div className="mk-meter">
+                    <i
+                      className="bg-receipt-600 transition-[width] duration-300"
+                      style={{
+                        width: `${Math.round((s.income / maxStoreValue) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="num text-receipt-600">
+                    {formatBaht(s.income)}
+                  </span>
+                </div>
+                <div className="mk-meterrow">
+                  <span>จ่าย</span>
+                  <div className="mk-meter">
+                    <i
+                      className="bg-payment-600 transition-[width] duration-300"
+                      style={{
+                        width: `${Math.round((s.expense / maxStoreValue) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="num text-payment-700">
+                    {formatBaht(s.expense)}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </div>

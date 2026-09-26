@@ -1,56 +1,51 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Store as StoreIcon } from "lucide-react";
+import { ChevronRight, Store as StoreIcon } from "lucide-react";
 import { getStores } from "@/lib/api/stores";
+import TopBar, { PageHeading } from "@/components/ui/top-bar";
 
 export default async function StoreListPage() {
   const stores = await getStores();
 
   return (
     <div className="flex flex-1 flex-col pb-24">
-      <div className="border-b-2 border-divider px-5 pt-4 pb-4">
-        <Link
-          href="/admin"
-          className="flex items-center gap-[7px] py-2.5 pr-2.5 text-[13px] font-semibold text-accent"
-        >
-          <ChevronLeft size={16} />
-          กลับ
-        </Link>
-        <div className="mt-2 text-[10px] leading-none font-semibold tracking-[.18em] text-accent uppercase">
-          ตั้งค่าร้าน
-        </div>
-        <h1 className="mt-2.5 text-[30px] leading-[1.15] font-bold tracking-[-.01em]">
-          จัดการร้านค้า
-        </h1>
-      </div>
-
-      <div className="border-b-2 border-divider bg-surface">
-        {stores.map((store) => (
-          <Link
-            key={store.id}
-            href={`/admin/store/${store.id}`}
-            className="flex items-center gap-3 border-t border-ink/13 px-5 py-4 first:border-t-0"
-          >
-            {store.logo ? (
-              <div
-                className="h-11 w-11 flex-none border border-divider bg-cover bg-center"
-                style={{ backgroundImage: `url("${store.logo}")` }}
-              />
-            ) : (
-              <div className="flex h-11 w-11 flex-none items-center justify-center border border-divider bg-bg text-ink/35">
-                <StoreIcon size={18} strokeWidth={1.6} />
+      <TopBar backHref="/admin" />
+      <div className="flex flex-col gap-4 px-4">
+        <PageHeading eyebrow="ตั้งค่าร้าน" title="จัดการร้านค้า" />
+        {stores.length > 0 ? (
+          <div className="mk-rows">
+            {stores.map((store) => (
+              <Link
+                key={store.id}
+                href={`/admin/store/${store.id}`}
+                className="mk-menurow"
+              >
+                <span className="mk-logotile">
+                  {store.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={store.logo} alt="" />
+                  ) : (
+                    <StoreIcon />
+                  )}
+                </span>
+                <span className="mk-menurow__t">
+                  <b className="truncate">{store.name}</b>
+                  <small>แก้ไขชื่อ โลโก้ ที่อยู่ เบอร์โทร</small>
+                </span>
+                <ChevronRight className="mk-billrow__chev" />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="mk-card">
+            <div className="mk-empty">
+              <div className="mk-empty__ic">
+                <StoreIcon />
               </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[14.5px] font-semibold">
-                {store.name}
-              </div>
-              <div className="mt-0.5 text-[11.5px] text-ink/50">
-                แก้ไขชื่อ โลโก้ ที่อยู่ เบอร์โทร
-              </div>
+              <h3>ยังไม่มีร้าน</h3>
+              <p>บัญชีนี้ยังไม่ได้เป็นเจ้าของร้านใด</p>
             </div>
-            <ChevronRight size={16} className="flex-none text-ink/35" />
-          </Link>
-        ))}
+          </div>
+        )}
       </div>
     </div>
   );
