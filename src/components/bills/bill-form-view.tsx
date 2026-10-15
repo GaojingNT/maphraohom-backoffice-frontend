@@ -918,6 +918,7 @@ export default function BillFormView({
                   <ProductCombobox
                     id={`item-${it.key}-product`}
                     text={it.typedName}
+                    selectedId={it.productId}
                     products={listProducts}
                     onType={(text) => handleItemNameType(it.key, text)}
                     onPick={(p) => handleItemNamePick(it.key, p)}
