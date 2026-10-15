@@ -91,19 +91,32 @@ export interface Bill {
   discount: string;
   shippingFee: string;
   total: string;
-  // Ready-to-use URL, or null when no slip has been attached — set/cleared
-  // only through PUT/DELETE /bills/:id/slip, never by POST/PUT /bills.
+  // The first of `slips`' URLs, or null when there are none — kept by the
+  // backend for clients from before a bill could carry several slips.
   slipUrl: string | null;
+  // Every slip in attach order (at most MAX_SLIPS_PER_BILL) — added/removed
+  // only through POST/DELETE /bills/:id/slips, never by POST/PUT /bills.
+  // Optional so an older backend that doesn't send it still type-checks;
+  // read it through billSlips().
+  slips?: BillSlip[];
   createdAt: string;
   updatedAt: string;
   // Audit fields — null when unknown: createdBy for bills from before it
   // was recorded, editedAt when never edited via PUT /bills/:id,
-  // slipUploadedAt when there's no slip. Optional so an older backend that
+  // slipUploadedAt (the most recent slip's) when there's no slip. Optional so an older backend that
   // doesn't send them still type-checks as "unknown".
   createdBy?: BillCreator | null;
   editedAt?: string | null;
   slipUploadedAt?: string | null;
   items: BillItem[];
+}
+
+// One slip image attached to a bill.
+export interface BillSlip {
+  id: number;
+  // Ready-to-use "/api/v1/files/..." path.
+  url: string;
+  uploadedAt: string;
 }
 
 // Who issued a bill — name only (GET /bills/:id never sends their email).

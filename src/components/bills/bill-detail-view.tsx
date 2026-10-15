@@ -23,7 +23,7 @@ import {
   TriangleAlert,
   UserRound,
 } from "lucide-react";
-import { deleteBill } from "@/lib/api/bills";
+import { billSlips, deleteBill } from "@/lib/api/bills";
 import { BILL_TYPE_CONFIG } from "@/lib/bill-type";
 import {
   formatBaht,
@@ -40,7 +40,7 @@ import {
 import { useToast } from "@/components/toast-provider";
 import SlipPanel from "@/components/bills/slip-panel";
 import { ConfirmDelete } from "@/components/ui/overlay";
-import type { Bill } from "@/lib/types";
+import type { Bill, BillSlip } from "@/lib/types";
 
 // The user agent never changes, so there's nothing to subscribe to.
 const subscribe = () => () => {};
@@ -72,6 +72,7 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
     getServerBrowser,
   );
   const config = BILL_TYPE_CONFIG[bill.type];
+  const slips = billSlips(bill);
   const Arrow = bill.type === "receipt" ? ArrowDown : ArrowUp;
 
   const itemsSubtotal = bill.items.reduce(
@@ -108,6 +109,23 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
     // page opened straight from a link has nothing behind it.
     if (window.history.length > 1) router.back();
     else router.push("/");
+  }
+
+  // Mirror the backend: slipUrl is the first slip's, slipUploadedAt the
+  // most recent attach time.
+  function handleSlipsChange(next: BillSlip[]) {
+    setBill((b) => ({
+      ...b,
+      slips: next,
+      slipUrl: next[0]?.url ?? null,
+      slipUploadedAt: next.reduce<string | null>(
+        (latest, s) =>
+          !latest || new Date(s.uploadedAt) > new Date(latest)
+            ? s.uploadedAt
+            : latest,
+        null,
+      ),
+    }));
   }
 
   async function handleDelete() {
@@ -236,7 +254,7 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
                   <Link2 />
                   คัดลอกลิงก์บิล
                 </button>
-                {bill.slipUrl && (
+                {slips.length > 0 && (
                   <button
                     type="button"
                     role="menuitem"
@@ -286,10 +304,10 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
           </div>
           <h2 className="mk-h2 mt-0.5">{bill.customerName}</h2>
           <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {bill.slipUrl ? (
+            {slips.length > 0 ? (
               <span className="mk-badge bg-receipt-100! text-receipt-600!">
                 <Check strokeWidth={3} />
-                แนบสลิปแล้ว
+                แนบสลิปแล้ว{slips.length > 1 && ` ${slips.length} รูป`}
               </span>
             ) : (
               <span className="mk-badge bg-warning-100! text-warning-700!">
@@ -316,16 +334,10 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
         <SlipPanel
           billId={bill.id}
           receiptNo={bill.receiptNo}
-          slipUrl={bill.slipUrl}
+          slips={slips}
           slipUploadedAt={bill.slipUploadedAt ?? null}
           lightboxRequest={lightboxRequest}
-          onChange={(slipUrl) =>
-            setBill((b) => ({
-              ...b,
-              slipUrl,
-              slipUploadedAt: slipUrl ? new Date().toISOString() : null,
-            }))
-          }
+          onChange={handleSlipsChange}
         />
 
         {/* ③ One receipt-shaped card: items → adjustments → net */}

@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import {
   ApiError,
+  addSlip,
   createBill,
+  MAX_SLIPS_PER_BILL,
   updateBill,
-  uploadSlip,
   type BillItemInput,
 } from "@/lib/api/bills";
 import {
@@ -84,6 +85,16 @@ function hasErrors(errors: FormErrors): boolean {
     Object.keys(errors.items).length > 0
   );
 }
+
+// A slip picked in the create form — uploaded right after the bill is
+// created (slips attach to an existing bill).
+interface PendingSlip {
+  key: string;
+  file: File;
+  previewUrl: string;
+}
+
+let slipKeySeq = 0;
 
 let itemKeySeq = 0;
 function createFormItem(): FormItem {
@@ -200,8 +211,8 @@ export default function BillFormView({
   const [shippingFee, setShippingFee] = useState(
     editingBill?.shippingFee ?? "",
   );
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [slipPreviewUrl, setSlipPreviewUrl] = useState<string | null>(null);
+  const [pendingSlips, setPendingSlips] = useState<PendingSlip[]>([]);
+  const pendingSlipsRef = useRef<PendingSlip[]>([]);
   const [errors, setErrors] = useState<FormErrors>(emptyErrors());
   const [submitting, setSubmitting] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -261,11 +272,16 @@ export default function BillFormView({
     };
   }, [storeId, type]);
 
+  // Revoke whatever previews are still picked when the form unmounts —
+  // removing one revokes its own (see removePendingSlip).
   useEffect(() => {
-    return () => {
-      if (slipPreviewUrl) URL.revokeObjectURL(slipPreviewUrl);
-    };
-  }, [slipPreviewUrl]);
+    pendingSlipsRef.current = pendingSlips;
+  }, [pendingSlips]);
+  useEffect(
+    () => () =>
+      pendingSlipsRef.current.forEach((s) => URL.revokeObjectURL(s.previewUrl)),
+    [],
+  );
 
   useEffect(() => () => clearTimeout(nameBlurTimer.current), []);
 
@@ -340,16 +356,30 @@ export default function BillFormView({
     }
   }
 
-  function handleSlipChange(file: File | null) {
-    setDirty(true);
-    if (slipPreviewUrl) URL.revokeObjectURL(slipPreviewUrl);
-    if (!file) {
-      setSlipFile(null);
-      setSlipPreviewUrl(null);
-      return;
+  function addPendingSlips(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = MAX_SLIPS_PER_BILL - pendingSlips.length;
+    const picked = Array.from(files).slice(0, room);
+    if (files.length > room) {
+      showToast(`แนบสลิปได้สูงสุด ${MAX_SLIPS_PER_BILL} รูปต่อบิล`, "error");
     }
-    setSlipFile(file);
-    setSlipPreviewUrl(URL.createObjectURL(file));
+    if (picked.length === 0) return;
+    setDirty(true);
+    setPendingSlips((prev) => [
+      ...prev,
+      ...picked.map((file) => ({
+        key: `s${slipKeySeq++}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+  }
+
+  function removePendingSlip(key: string) {
+    setDirty(true);
+    const slip = pendingSlips.find((s) => s.key === key);
+    if (slip) URL.revokeObjectURL(slip.previewUrl);
+    setPendingSlips((prev) => prev.filter((s) => s.key !== key));
   }
 
   function handleItemProductChange(key: string, productId: number | null) {
@@ -497,14 +527,24 @@ export default function BillFormView({
       } else {
         bill = await createBill(payload);
         setDirty(false);
-        if (slipFile) {
+        // One request per slip, in the order picked. A failed one doesn't
+        // stop the rest — the bill exists either way, and the missing
+        // slips can be attached again from its detail page.
+        let failedSlips = 0;
+        for (const slip of pendingSlips) {
           try {
-            await uploadSlip(bill.id, slipFile);
+            await addSlip(bill.id, slip.file);
           } catch {
-            showToast("สร้างบิลแล้ว แต่แนบสลิปไม่สำเร็จ", "error");
-            router.push(`/bills/${bill.id}`);
-            return;
+            failedSlips++;
           }
+        }
+        if (failedSlips > 0) {
+          showToast(
+            `สร้างบิลแล้ว แต่แนบสลิปไม่สำเร็จ ${failedSlips} รูป`,
+            "error",
+          );
+          router.push(`/bills/${bill.id}`);
+          return;
         }
         showToast(`บันทึกบิล ${bill.receiptNo} แล้ว`);
         router.push(`/bills/${bill.id}`);
@@ -930,48 +970,63 @@ export default function BillFormView({
           {!isEditing && (
             <div className="mk-field">
               <div className="mk-label">
-                สลิปโอนเงิน <span className="opt">(ไม่บังคับ)</span>
+                สลิปโอนเงิน{" "}
+                <span className="opt">
+                  (ไม่บังคับ · {pendingSlips.length}/{MAX_SLIPS_PER_BILL} รูป)
+                </span>
               </div>
-              {slipFile ? (
-                <div className="mk-thumbrow">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
-                  <img
-                    src={slipPreviewUrl ?? ""}
-                    alt="สลิปที่แนบ"
-                    className="mk-thumb"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] font-semibold">
-                      {slipFile.name}
+              <div className="flex flex-col gap-2">
+                {pendingSlips.map((slip, i) => (
+                  <div key={slip.key} className="mk-thumbrow">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
+                    <img
+                      src={slip.previewUrl}
+                      alt={`สลิปที่แนบ รูปที่ ${i + 1}`}
+                      className="mk-thumb"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[14px] font-semibold">
+                        {slip.file.name}
+                      </div>
+                      <div className="mk-caption">
+                        {(slip.file.size / 1024 / 1024).toFixed(1)} MB ·
+                        อัปโหลดหลังบันทึกบิล
+                      </div>
                     </div>
-                    <div className="mk-caption">
-                      {(slipFile.size / 1024 / 1024).toFixed(1)} MB ·
-                      อัปโหลดหลังบันทึกบิล
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePendingSlip(slip.key)}
+                      className="mk-btn mk-btn--sm mk-btn--danger-ghost"
+                    >
+                      ลบสลิป
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSlipChange(null)}
-                    className="mk-btn mk-btn--sm mk-btn--danger-ghost"
+                ))}
+                {pendingSlips.length < MAX_SLIPS_PER_BILL && (
+                  <label
+                    className={`mk-upload ${pendingSlips.length > 0 ? "min-h-[64px]!" : "min-h-[88px]!"}`}
                   >
-                    ลบสลิป
-                  </button>
-                </div>
-              ) : (
-                <label className="mk-upload min-h-[88px]!">
-                  <Upload />
-                  แนบรูปสลิป (ไม่บังคับ)
-                  <small>JPG · PNG · WebP ไม่เกิน 10 MB</small>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={(e) =>
-                      handleSlipChange(e.target.files?.[0] ?? null)
-                    }
-                    className="hidden"
-                  />
-                </label>
-              )}
+                    {pendingSlips.length > 0 ? <Plus /> : <Upload />}
+                    {pendingSlips.length > 0
+                      ? "เพิ่มรูปสลิป"
+                      : "แนบรูปสลิป (ไม่บังคับ)"}
+                    <small>
+                      JPG · PNG · WebP ไม่เกิน 10 MB · สูงสุด{" "}
+                      {MAX_SLIPS_PER_BILL} รูป
+                    </small>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={(e) => {
+                        addPendingSlips(e.target.files);
+                        e.target.value = "";
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
             </div>
           )}
         </div>
