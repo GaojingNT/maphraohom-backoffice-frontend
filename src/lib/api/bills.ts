@@ -79,8 +79,12 @@ export async function deleteBill(id: number): Promise<void> {
   if (!res.ok) await throwApiError(res, `DELETE /bills/${id} failed`);
 }
 
+// productId 0 = an item typed in on a payment bill: productName + unit
+// are sent instead, and the backend matches or creates the product.
 export interface BillItemInput {
   productId: number;
+  productName?: string;
+  unit?: string;
   // Sent as strings — the backend's decimal.Decimal accepts either, but
   // string keeps what the user typed exact (no float round-tripping).
   quantity: string;

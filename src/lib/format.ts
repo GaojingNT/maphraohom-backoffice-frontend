@@ -56,7 +56,7 @@ export function unitLabel(unit: string): string {
 // Field labels for the create/edit form's quantity and price inputs, which
 // change wording by unit (spec: "น้ำหนัก (กก.)"/"จำนวน (ขวด)", "ราคา/กก."/"ราคา/ขวด").
 export function quantityFieldLabel(unit: string): string {
-  return unit === "ขวด" ? `จำนวน (${unit})` : `น้ำหนัก (${unit})`;
+  return unit === "กก." ? `น้ำหนัก (${unit})` : `จำนวน (${unit})`;
 }
 
 export function priceFieldLabel(unit: string): string {
