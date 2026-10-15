@@ -10,17 +10,33 @@ export interface ProductListItem {
   billScope?: "all" | "payment";
 }
 
-// Units a user can pick for an item typed in on a payment bill — matches
-// models.PaymentItemUnits on the backend, which enforces it. The first is
-// the default.
-export const PAYMENT_ITEM_UNITS = [
+// Units the payment-bill form offers first — matches models.CommonUnits on
+// the backend. The first is the default. Any other unit can be typed in, up
+// to MAX_UNIT_LENGTH characters (the backend enforces that).
+export const COMMON_UNITS = [
   "รายการ",
   "ครั้ง",
   "ชิ้น",
   "ถุง",
+  "ลัง",
+  "กล่อง",
+  "แพ็ค",
   "กก.",
   "ขวด",
-] as const;
+  "ลิตร",
+  "เที่ยว",
+  "วัน",
+];
+export const MAX_UNIT_LENGTH = 20;
+
+// COMMON_UNITS plus any other unit a product already uses (typed on an
+// earlier bill), so a once-typed unit is offered in the dropdown next time.
+export function unitOptions(products: ProductListItem[]): string[] {
+  const extra = products
+    .map((p) => p.unit)
+    .filter((u) => !COMMON_UNITS.includes(u));
+  return [...COMMON_UNITS, ...new Set(extra)];
+}
 
 // Same rule as the backend's models.NormalizeProductName: trim and collapse
 // inner whitespace, so "ค่า  ขนส่ง " matches "ค่า ขนส่ง".

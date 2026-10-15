@@ -28,12 +28,15 @@ import {
   type CustomerPhoneItem,
 } from "@/lib/api/customers";
 import {
+  COMMON_UNITS,
+  MAX_UNIT_LENGTH,
   normalizeProductName,
-  PAYMENT_ITEM_UNITS,
   productsForBillType,
+  unitOptions,
   type ProductListItem,
 } from "@/lib/api/products";
 import ProductCombobox from "@/components/bills/product-combobox";
+import UnitPicker from "@/components/bills/unit-picker";
 import { getLastPrices } from "@/lib/api/stores";
 import {
   formatBaht,
@@ -53,10 +56,11 @@ const BOTTLE_UNIT = "ขวด";
 interface FormItem {
   key: string;
   productId: number | null;
-  // Payment bills only: what's typed in the item-name box. With no
-  // productId it's a new item, saved by the backend with newUnit.
+  // Payment bills only: what's typed in the item-name box (with no
+  // productId it's a new item, saved by the backend), and the unit the
+  // item is billed in — prefilled from a picked product, always editable.
   typedName: string;
-  newUnit: string;
+  unit: string;
   quantity: string;
   price: string;
 }
@@ -71,7 +75,7 @@ interface FormErrors {
   itemsList?: string;
   items: Record<
     string,
-    { quantity?: string; price?: string; productId?: string }
+    { quantity?: string; price?: string; productId?: string; unit?: string }
   >;
 }
 
@@ -112,7 +116,7 @@ function createFormItem(): FormItem {
     key: `i${itemKeySeq++}`,
     productId: null,
     typedName: "",
-    newUnit: PAYMENT_ITEM_UNITS[0],
+    unit: COMMON_UNITS[0],
     quantity: "",
     price: "",
   };
@@ -194,6 +198,7 @@ export default function BillFormView({
   // the item name (suggested from every product) — see ProductCombobox.
   const isPayment = type === "payment";
   const listProducts = productsForBillType(products, type);
+  const units = unitOptions(listProducts);
 
   const [storeId, setStoreId] = useState<number | null>(
     editingBill?.storeId ?? null,
@@ -215,7 +220,7 @@ export default function BillFormView({
           key: `i${itemKeySeq++}`,
           productId: it.productId,
           typedName: it.productName,
-          newUnit: PAYMENT_ITEM_UNITS[0],
+          unit: it.unit,
           quantity: it.quantity,
           price: it.price,
         }))
@@ -324,14 +329,19 @@ export default function BillFormView({
 
   function clearItemError(
     itemKey: string,
-    field: "productId" | "quantity" | "price",
+    field: "productId" | "quantity" | "price" | "unit",
   ) {
     setErrors((prev) => {
       const row = prev.items[itemKey];
       if (!row?.[field]) return prev;
       const nextRow = { ...row, [field]: undefined };
       const nextItems = { ...prev.items };
-      if (!nextRow.productId && !nextRow.quantity && !nextRow.price)
+      if (
+        !nextRow.productId &&
+        !nextRow.quantity &&
+        !nextRow.price &&
+        !nextRow.unit
+      )
         delete nextItems[itemKey];
       else nextItems[itemKey] = nextRow;
       return { ...prev, items: nextItems };
@@ -417,7 +427,19 @@ export default function BillFormView({
     if (prefill) setAutoFilled(true);
     setItems((prev) =>
       prev.map((it) =>
-        it.key === key ? { ...it, productId, price: prefill ?? it.price } : it,
+        it.key === key
+          ? {
+              ...it,
+              productId,
+              price: prefill ?? it.price,
+              // Payment bills start a picked product in the unit it was last
+              // billed in; the user can still change it for this bill.
+              unit:
+                isPayment && productId != null
+                  ? (productById.get(productId)?.unit ?? it.unit)
+                  : it.unit,
+            }
+          : it,
       ),
     );
   }
@@ -447,11 +469,12 @@ export default function BillFormView({
     );
     handleItemProductChange(key, product.id);
   }
-  function updateItemNewUnit(key: string, newUnit: string) {
+  function updateItemUnit(key: string, unit: string) {
     setDirty(true);
+    clearItemError(key, "unit");
     clearItemError(key, "quantity");
     setItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, newUnit } : it)),
+      prev.map((it) => (it.key === key ? { ...it, unit } : it)),
     );
   }
   function updateItemQuantity(key: string, raw: string) {
@@ -485,7 +508,9 @@ export default function BillFormView({
       it.productId != null ? productById.get(it.productId) : undefined;
     const isNew =
       isPayment && !product && normalizeProductName(it.typedName) !== "";
-    const unit = product?.unit ?? (isNew ? it.newUnit : "กก.");
+    const unit = isPayment
+      ? normalizeProductName(it.unit)
+      : (product?.unit ?? "กก.");
     const subtotal = subtotalBaht(it.quantity, it.price);
     return { ...it, product, isNew, unit, subtotal };
   });
@@ -512,6 +537,9 @@ export default function BillFormView({
           ? "กรอกชื่อรายการ"
           : "เลือกสินค้าของรายการนี้";
       }
+      if (isPayment && !it.unit) rowErr.unit = "ใส่หน่วย";
+      else if (isPayment && it.unit.length > MAX_UNIT_LENGTH)
+        rowErr.unit = `หน่วยยาวได้ไม่เกิน ${MAX_UNIT_LENGTH} ตัวอักษร`;
       if (!(toNumber(it.quantity) > 0)) {
         rowErr.quantity = "จำนวนต้องมากกว่า 0";
       } else if (
@@ -549,19 +577,17 @@ export default function BillFormView({
       return;
     }
 
-    // A new typed-in item goes as productId 0 + its name and unit; the
-    // backend matches or creates the product.
-    const itemInputs: BillItemInput[] = itemsComputed.map((it) =>
-      it.product
-        ? { productId: it.product.id, quantity: it.quantity, price: it.price }
-        : {
-            productId: 0,
-            productName: normalizeProductName(it.typedName),
-            unit: it.newUnit,
-            quantity: it.quantity,
-            price: it.price,
-          },
-    );
+    // A new typed-in item goes as productId 0 + its name; the backend
+    // matches or creates the product. Payment bills send every item's unit
+    // (the backend bills in it); receipt bills use the product's own.
+    const itemInputs: BillItemInput[] = itemsComputed.map((it) => ({
+      ...(it.product
+        ? { productId: it.product.id }
+        : { productId: 0, productName: normalizeProductName(it.typedName) }),
+      ...(isPayment ? { unit: it.unit } : {}),
+      quantity: it.quantity,
+      price: it.price,
+    }));
 
     const payload = {
       type,
@@ -943,31 +969,25 @@ export default function BillFormView({
                     ))}
                   </select>
                 )}
-                {isPayment && it.product && (
-                  <div className="mk-help">หน่วย: {it.product.unit}</div>
-                )}
-                <FieldError message={rowErr?.productId} />
-              </div>
-              {it.isNew && (
-                <div className="mk-field mt-3">
-                  <label className="mk-label" htmlFor={`item-${it.key}-unit`}>
-                    หน่วย <span className="req">*</span>
-                  </label>
-                  <select
-                    id={`item-${it.key}-unit`}
-                    value={it.newUnit}
-                    onChange={(e) => updateItemNewUnit(it.key, e.target.value)}
-                    className="mk-input"
-                  >
-                    {PAYMENT_ITEM_UNITS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                {it.isNew && (
                   <div className="mk-help">
                     รายการใหม่ — จะบันทึกไว้ให้เลือกครั้งหน้า
                   </div>
+                )}
+                <FieldError message={rowErr?.productId} />
+              </div>
+              {isPayment && (
+                <div className={`${fieldClass(rowErr?.unit)} mt-3`}>
+                  <label className="mk-label" htmlFor={`item-${it.key}-unit`}>
+                    หน่วย <span className="req">*</span>
+                  </label>
+                  <UnitPicker
+                    id={`item-${it.key}-unit`}
+                    value={it.unit}
+                    options={units}
+                    onChange={(unit) => updateItemUnit(it.key, unit)}
+                  />
+                  <FieldError message={rowErr?.unit} />
                 </div>
               )}
               <div className="mk-grid2 mt-3">
