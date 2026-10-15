@@ -27,7 +27,13 @@ import {
   type CustomerListItem,
   type CustomerPhoneItem,
 } from "@/lib/api/customers";
-import type { ProductListItem } from "@/lib/api/products";
+import {
+  normalizeProductName,
+  PAYMENT_ITEM_UNITS,
+  productsForBillType,
+  type ProductListItem,
+} from "@/lib/api/products";
+import ProductCombobox from "@/components/bills/product-combobox";
 import { getLastPrices } from "@/lib/api/stores";
 import {
   formatBaht,
@@ -47,6 +53,10 @@ const BOTTLE_UNIT = "ขวด";
 interface FormItem {
   key: string;
   productId: number | null;
+  // Payment bills only: what's typed in the item-name box. With no
+  // productId it's a new item, saved by the backend with newUnit.
+  typedName: string;
+  newUnit: string;
   quantity: string;
   price: string;
 }
@@ -98,7 +108,14 @@ let slipKeySeq = 0;
 
 let itemKeySeq = 0;
 function createFormItem(): FormItem {
-  return { key: `i${itemKeySeq++}`, productId: null, quantity: "", price: "" };
+  return {
+    key: `i${itemKeySeq++}`,
+    productId: null,
+    typedName: "",
+    newUnit: PAYMENT_ITEM_UNITS[0],
+    quantity: "",
+    price: "",
+  };
 }
 
 // Maps the backend's "items[N].field" validation errors back onto the form
@@ -173,6 +190,10 @@ export default function BillFormView({
   const config = BILL_TYPE_CONFIG[type];
 
   const productById = new Map(products.map((p) => [p.id, p]));
+  // Receipt bills pick from the coconut catalog only; payment bills type
+  // the item name (suggested from every product) — see ProductCombobox.
+  const isPayment = type === "payment";
+  const listProducts = productsForBillType(products, type);
 
   const [storeId, setStoreId] = useState<number | null>(
     editingBill?.storeId ?? null,
@@ -193,6 +214,8 @@ export default function BillFormView({
       ? editingBill.items.map((it) => ({
           key: `i${itemKeySeq++}`,
           productId: it.productId,
+          typedName: it.productName,
+          newUnit: PAYMENT_ITEM_UNITS[0],
           quantity: it.quantity,
           price: it.price,
         }))
@@ -398,6 +421,39 @@ export default function BillFormView({
       ),
     );
   }
+  // Payment bills: typing an existing product's exact name links the row to
+  // it (same as picking it); anything else is a new item.
+  function handleItemNameType(key: string, text: string) {
+    const name = normalizeProductName(text).toLowerCase();
+    const match = name
+      ? listProducts.find((p) => p.name.toLowerCase() === name)
+      : undefined;
+    setItems((prev) =>
+      prev.map((it) => (it.key === key ? { ...it, typedName: text } : it)),
+    );
+    const row = items.find((it) => it.key === key);
+    if ((match?.id ?? null) !== row?.productId) {
+      handleItemProductChange(key, match?.id ?? null);
+    } else {
+      setDirty(true);
+      clearItemError(key, "productId");
+    }
+  }
+  function handleItemNamePick(key: string, product: ProductListItem) {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.key === key ? { ...it, typedName: product.name } : it,
+      ),
+    );
+    handleItemProductChange(key, product.id);
+  }
+  function updateItemNewUnit(key: string, newUnit: string) {
+    setDirty(true);
+    clearItemError(key, "quantity");
+    setItems((prev) =>
+      prev.map((it) => (it.key === key ? { ...it, newUnit } : it)),
+    );
+  }
   function updateItemQuantity(key: string, raw: string) {
     setDirty(true);
     clearItemError(key, "quantity");
@@ -427,9 +483,11 @@ export default function BillFormView({
   const itemsComputed = items.map((it) => {
     const product =
       it.productId != null ? productById.get(it.productId) : undefined;
-    const unit = product?.unit ?? "กก.";
+    const isNew =
+      isPayment && !product && normalizeProductName(it.typedName) !== "";
+    const unit = product?.unit ?? (isNew ? it.newUnit : "กก.");
     const subtotal = subtotalBaht(it.quantity, it.price);
-    return { ...it, product, unit, subtotal };
+    return { ...it, product, isNew, unit, subtotal };
   });
   const subtotalCentsList = itemsComputed.map((it) =>
     Math.round(it.subtotal * 100),
@@ -447,15 +505,17 @@ export default function BillFormView({
     if (items.length === 0) next.itemsList = "ต้องมีสินค้าอย่างน้อย 1 รายการ";
     if (toNumber(discount) < 0) next.discount = "ส่วนลดต้องไม่ติดลบ";
     if (toNumber(shippingFee) < 0) next.shippingFee = "ค่าส่งต้องไม่ติดลบ";
-    items.forEach((it) => {
+    itemsComputed.forEach((it) => {
       const rowErr: FormErrors["items"][string] = {};
-      const product =
-        it.productId != null ? productById.get(it.productId) : undefined;
-      if (!it.productId) rowErr.productId = "เลือกสินค้าของรายการนี้";
+      if (!it.productId && !it.isNew) {
+        rowErr.productId = isPayment
+          ? "กรอกชื่อรายการ"
+          : "เลือกสินค้าของรายการนี้";
+      }
       if (!(toNumber(it.quantity) > 0)) {
         rowErr.quantity = "จำนวนต้องมากกว่า 0";
       } else if (
-        product?.unit === BOTTLE_UNIT &&
+        it.unit === BOTTLE_UNIT &&
         !Number.isInteger(toNumber(it.quantity))
       ) {
         rowErr.quantity = "ขวดต้องเป็นจำนวนเต็ม";
@@ -489,11 +549,19 @@ export default function BillFormView({
       return;
     }
 
-    const itemInputs: BillItemInput[] = items.map((it) => ({
-      productId: it.productId!,
-      quantity: it.quantity,
-      price: it.price,
-    }));
+    // A new typed-in item goes as productId 0 + its name and unit; the
+    // backend matches or creates the product.
+    const itemInputs: BillItemInput[] = itemsComputed.map((it) =>
+      it.product
+        ? { productId: it.product.id, quantity: it.quantity, price: it.price }
+        : {
+            productId: 0,
+            productName: normalizeProductName(it.typedName),
+            unit: it.newUnit,
+            quantity: it.quantity,
+            price: it.price,
+          },
+    );
 
     const payload = {
       type,
@@ -843,28 +911,64 @@ export default function BillFormView({
               </div>
               <div className={fieldClass(rowErr?.productId)}>
                 <label className="mk-label" htmlFor={`item-${it.key}-product`}>
-                  สินค้า <span className="req">*</span>
+                  {isPayment ? "รายการ" : "สินค้า"}{" "}
+                  <span className="req">*</span>
                 </label>
-                <select
-                  id={`item-${it.key}-product`}
-                  value={it.productId ?? ""}
-                  onChange={(e) =>
-                    handleItemProductChange(
-                      it.key,
-                      e.target.value ? Number(e.target.value) : null,
-                    )
-                  }
-                  className="mk-input"
-                >
-                  <option value="">— เลือกสินค้า —</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.unit})
-                    </option>
-                  ))}
-                </select>
+                {isPayment ? (
+                  <ProductCombobox
+                    id={`item-${it.key}-product`}
+                    text={it.typedName}
+                    products={listProducts}
+                    onType={(text) => handleItemNameType(it.key, text)}
+                    onPick={(p) => handleItemNamePick(it.key, p)}
+                  />
+                ) : (
+                  <select
+                    id={`item-${it.key}-product`}
+                    value={it.productId ?? ""}
+                    onChange={(e) =>
+                      handleItemProductChange(
+                        it.key,
+                        e.target.value ? Number(e.target.value) : null,
+                      )
+                    }
+                    className="mk-input"
+                  >
+                    <option value="">— เลือกสินค้า —</option>
+                    {listProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.unit})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isPayment && it.product && (
+                  <div className="mk-help">หน่วย: {it.product.unit}</div>
+                )}
                 <FieldError message={rowErr?.productId} />
               </div>
+              {it.isNew && (
+                <div className="mk-field mt-3">
+                  <label className="mk-label" htmlFor={`item-${it.key}-unit`}>
+                    หน่วย <span className="req">*</span>
+                  </label>
+                  <select
+                    id={`item-${it.key}-unit`}
+                    value={it.newUnit}
+                    onChange={(e) => updateItemNewUnit(it.key, e.target.value)}
+                    className="mk-input"
+                  >
+                    {PAYMENT_ITEM_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mk-help">
+                    รายการใหม่ — จะบันทึกไว้ให้เลือกครั้งหน้า
+                  </div>
+                </div>
+              )}
               <div className="mk-grid2 mt-3">
                 <div className={fieldClass(rowErr?.quantity)}>
                   <label className="mk-label" htmlFor={`item-${it.key}-qty`}>
@@ -900,7 +1004,7 @@ export default function BillFormView({
               </div>
               <div className="mk-item__sum">
                 <span className="num">
-                  {it.product && it.quantity && it.price
+                  {(it.product || it.isNew) && it.quantity && it.price
                     ? `${formatQuantity(it.quantity, it.unit)} × ฿${toNumber(it.price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`
                     : "กรอกจำนวนและราคา"}
                 </span>
