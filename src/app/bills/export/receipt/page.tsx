@@ -1,7 +1,7 @@
 import ThaiBahtText from "thai-baht-text";
 import ReceiptPrintToolbar from "@/components/export/receipt-print-toolbar";
 import ResponsivePageScale from "@/components/export/responsive-page-scale";
-import { getBill } from "@/lib/api/bills";
+import { billSlips, getBill } from "@/lib/api/bills";
 import { getCurrentProfile } from "@/lib/auth/session";
 import { pdfDateStamp } from "@/lib/export/file-name";
 import { parseIds } from "@/lib/export/parse-ids";
@@ -85,13 +85,11 @@ export default async function ExportReceiptPage({
       // Rounded to match formatBaht's whole-baht display elsewhere in the
       // app — otherwise the words could mention satang the number doesn't.
       totalWords: ThaiBahtText(Math.round(toNumber(b.total))),
-      slipUrl: b.slipUrl,
+      slipUrls: billSlips(b).map((s) => s.url),
     };
   });
 
-  const slipUrls = receipts
-    .map((r) => r.slipUrl)
-    .filter((u): u is string => !!u);
+  const slipUrls = receipts.flatMap((r) => r.slipUrls);
   // The toolbar holds the print button until these have loaded — the
   // signature is on every page, so it has to be ready too.
   const preloadUrls =
@@ -308,8 +306,8 @@ export default async function ExportReceiptPage({
                       </div>
                     </div>
 
-                    {rc.slipUrl ? (
-                      <div className="mt-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3]">
+                    {rc.slipUrls.length > 0 ? (
+                      <div className="mt-3 flex min-h-0 flex-1 items-center justify-center gap-[4mm] overflow-hidden border border-[rgba(22,33,26,0.3)] bg-[#f4f5f3] px-[4mm]">
                         {/* Print/Save-as-PDF drop CSS background-images unless
                         "Background graphics" is checked, so the slip is a
                         real <img>. Its cap is an absolute length (not
@@ -320,12 +318,21 @@ export default async function ExportReceiptPage({
                         slip is ~340mm tall, bigger than the whole page),
                         blowing out the card and corrupting every bill's
                         page break after it. overflow-hidden here and on
-                        the card above are a hard backstop either way. */}
-                        <img
-                          src={rc.slipUrl}
-                          alt="สลิปโอนเงิน"
-                          className="max-h-[100mm] max-w-full object-contain"
-                        />
+                        the card above are a hard backstop either way.
+                        Several slips sit side by side, each in an equal
+                        share of the width. */}
+                        {rc.slipUrls.map((url, i) => (
+                          <div
+                            key={url}
+                            className="flex min-w-0 flex-1 items-center justify-center"
+                          >
+                            <img
+                              src={url}
+                              alt={`สลิปโอนเงิน รูปที่ ${i + 1}`}
+                              className="max-h-[100mm] max-w-full object-contain"
+                            />
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="mt-3 flex flex-1 flex-col items-center justify-center border border-dashed border-[rgba(22,33,26,0.4)] text-center text-[11px] leading-[1.5] font-semibold text-[#8a938c]">

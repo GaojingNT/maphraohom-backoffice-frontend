@@ -1,8 +1,8 @@
 import { apiFetch } from "@/lib/api/fetch";
 import type { BillType } from "@/lib/bill-type";
-import type { Bill, BillListItem } from "@/lib/types";
+import type { Bill, BillListItem, BillSlip } from "@/lib/types";
 
-// slipUrl/storeLogo come back as "/api/v1/files/..." paths. They're used
+// Slip urls/storeLogo come back as "/api/v1/files/..." paths. They're used
 // as-is: the browser resolves them against this app's origin, where
 // app/api/v1/[...path]/route.ts serves them with the session attached.
 
@@ -130,22 +130,38 @@ export async function updateBill(
   return await res.json();
 }
 
-// Slip is attached/replaced/removed through its own endpoints, independent
-// of creating/editing the bill's fields.
-export async function uploadSlip(id: number, file: File): Promise<string> {
+// Matches models.MaxSlipsPerBill on the backend, which enforces it.
+export const MAX_SLIPS_PER_BILL = 5;
+
+// A bill's slips, falling back to the single slipUrl for a response from a
+// backend that predates `slips` (that slip has no id, so it can't be
+// deleted individually — id 0 is never a real row).
+export function billSlips(bill: Bill): BillSlip[] {
+  if (bill.slips) return bill.slips;
+  return bill.slipUrl
+    ? [{ id: 0, url: bill.slipUrl, uploadedAt: bill.slipUploadedAt ?? "" }]
+    : [];
+}
+
+// Slips are added/removed one at a time through their own endpoints,
+// independent of creating/editing the bill's fields. One image per request
+// keeps each upload under the backend's body size limit.
+export async function addSlip(billId: number, file: File): Promise<BillSlip> {
   const form = new FormData();
   form.set("slip", file);
-  const res = await apiFetch(`/bills/${id}/slip`, {
-    method: "PUT",
+  const res = await apiFetch(`/bills/${billId}/slips`, {
+    method: "POST",
     body: form,
   });
   if (!res.ok) await throwApiError(res, "แนบสลิปไม่สำเร็จ");
-  const body: { slipUrl: string } = await res.json();
-  return body.slipUrl;
+  return await res.json();
 }
 
-export async function deleteSlip(id: number): Promise<void> {
-  const res = await apiFetch(`/bills/${id}/slip`, {
+export async function deleteSlip(
+  billId: number,
+  slipId: number,
+): Promise<void> {
+  const res = await apiFetch(`/bills/${billId}/slips/${slipId}`, {
     method: "DELETE",
   });
   if (!res.ok) await throwApiError(res, "ลบสลิปไม่สำเร็จ");
