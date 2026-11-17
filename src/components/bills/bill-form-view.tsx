@@ -37,6 +37,7 @@ import {
 } from "@/lib/api/products";
 import ProductCombobox from "@/components/bills/product-combobox";
 import UnitPicker from "@/components/bills/unit-picker";
+import PlatformPicker from "@/components/bills/platform-picker";
 import { getLastPrices } from "@/lib/api/stores";
 import {
   formatBaht,
@@ -48,7 +49,7 @@ import {
 import { subtotalBaht, toNumber, totalBaht } from "@/lib/money";
 import { useToast } from "@/components/toast-provider";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
-import type { Bill, Store } from "@/lib/types";
+import type { Bill, PlatformType, Store } from "@/lib/types";
 import { ConfirmLeave } from "@/components/ui/overlay";
 
 const BOTTLE_UNIT = "ขวด";
@@ -70,6 +71,7 @@ interface FormErrors {
   customerName?: string;
   customerAddress?: string;
   customerId?: string;
+  platformTypeId?: string;
   discount?: string;
   shippingFee?: string;
   itemsList?: string;
@@ -93,6 +95,7 @@ function hasErrors(errors: FormErrors): boolean {
     !!errors.customerName ||
     !!errors.customerAddress ||
     !!errors.customerId ||
+    !!errors.platformTypeId ||
     !!errors.discount ||
     !!errors.shippingFee ||
     !!errors.itemsList ||
@@ -150,6 +153,8 @@ function applyServerFieldErrors(
       next.shippingFee = "ค่าส่งต้องไม่ติดลบ";
     } else if (err.field === "customerId") {
       next.customerId = "ไม่พบลูกค้ารายนี้";
+    } else if (err.field === "platformTypeId") {
+      next.platformTypeId = "ช่องทางนี้ใช้ไม่ได้ เลือกใหม่อีกครั้ง";
     }
   }
   return next;
@@ -181,11 +186,13 @@ export default function BillFormView({
   type,
   stores,
   products,
+  platforms = [],
   editingBill,
 }: {
   type: BillType;
   stores: Store[];
   products: ProductListItem[];
+  platforms?: PlatformType[];
   editingBill?: Bill;
 }) {
   const router = useRouter();
@@ -199,6 +206,13 @@ export default function BillFormView({
   const isPayment = type === "payment";
   const listProducts = productsForBillType(products, type);
   const units = unitOptions(listProducts);
+  // The edited bill's own platform stays pickable even if it has since been
+  // hidden from GET /platform-types.
+  const platformOptions =
+    editingBill?.platformType &&
+    !platforms.some((p) => p.id === editingBill.platformType!.id)
+      ? [...platforms, editingBill.platformType]
+      : platforms;
 
   const [storeId, setStoreId] = useState<number | null>(
     editingBill?.storeId ?? null,
@@ -211,6 +225,10 @@ export default function BillFormView({
   );
   const [customerId, setCustomerId] = useState<number | undefined>(
     editingBill?.customerId,
+  );
+  // Receipt bills only — optional sales platform.
+  const [platformTypeId, setPlatformTypeId] = useState<number | null>(
+    editingBill?.platformTypeId ?? null,
   );
   const [lastPrices, setLastPrices] = useState<Map<number, string>>(new Map());
   const [autoFilled, setAutoFilled] = useState(false);
@@ -599,6 +617,8 @@ export default function BillFormView({
       discount: discount || "0",
       shippingFee: shippingFee || "0",
       items: itemInputs,
+      // Receipt bills only. null on edit clears it.
+      ...(isPayment ? {} : { platformTypeId }),
       // Edit never sends this — the backend ignores it on PUT anyway, but
       // omitting it here makes that explicit. An emptied/invalid picker
       // just falls back to the backend's own "now" default rather than
@@ -751,6 +771,25 @@ export default function BillFormView({
             )}
             <FieldError message={errors.storeId} />
           </div>
+
+          {!isPayment && platformOptions.length > 0 && (
+            <div className={fieldClass(errors.platformTypeId)}>
+              <span className="mk-label" id="bill-platform-label">
+                ช่องทางการขาย <span className="opt">(ไม่บังคับ)</span>
+              </span>
+              <PlatformPicker
+                platforms={platformOptions}
+                value={platformTypeId}
+                onChange={(id) => {
+                  setDirty(true);
+                  setPlatformTypeId(id);
+                  clearError("platformTypeId");
+                }}
+              />
+              <div className="mk-help">แตะอีกครั้งเพื่อยกเลิกการเลือก</div>
+              <FieldError message={errors.platformTypeId} />
+            </div>
+          )}
         </div>
 
         {/* Party — before the items, the same order as on the paper bill */}

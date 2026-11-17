@@ -24,11 +24,24 @@ import {
 import { formatBaht } from "@/lib/format";
 import { toNumber } from "@/lib/money";
 import { BILL_TYPE_CONFIG, type BillType } from "@/lib/bill-type";
-import type { BillListItem, Store } from "@/lib/types";
+import type { BillListItem, PlatformType, Store } from "@/lib/types";
 import { Sheet } from "@/components/ui/overlay";
 import BillTypeSheet from "@/components/bills/bill-type-sheet";
+import PlatformLogo from "@/components/bills/platform-logo";
 
 const PAGE_SIZE = 8;
+
+// Platform filter: "all", a platform id, or "none" (receipt bills with no
+// platform). Payment bills never have one, so any filter other than "all"
+// shows receipt bills only.
+type PlatformFilter = "all" | "none" | number;
+
+function matchesPlatform(bill: BillListItem, filter: PlatformFilter) {
+  if (filter === "all") return true;
+  if (bill.type !== "receipt") return false;
+  if (filter === "none") return !bill.platformType;
+  return bill.platformType?.id === filter;
+}
 
 type TypeTab = "all" | BillType;
 export type FilterMode = "all" | "day" | "month" | "year";
@@ -118,10 +131,12 @@ export interface BillListFilter {
 export default function BillListView({
   bills,
   stores,
+  platforms = [],
   initialFilter,
 }: {
   bills: BillListItem[];
   stores: Store[];
+  platforms?: PlatformType[];
   initialFilter?: BillListFilter;
 }) {
   const router = useRouter();
@@ -129,6 +144,12 @@ export default function BillListView({
   const [now] = useState(() => Date.now());
   const [page, setPage] = useState(1);
   const [typeTab, setTypeTab] = useState<TypeTab>("all");
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
+  // Payment bills have no platform — the filter is hidden and ignored there.
+  const showPlatformFilter = platforms.length > 0 && typeTab !== "payment";
+  const activePlatformFilter: PlatformFilter = showPlatformFilter
+    ? platformFilter
+    : "all";
   // The store filter lives in the URL (?store=) and is applied by the server
   // fetch, so `bills` is already that store's complete list. The optimistic
   // copy highlights the tapped chip while the new list loads.
@@ -157,8 +178,13 @@ export default function BillListView({
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
   const base = useMemo(
-    () => bills.filter((b) => typeTab === "all" || b.type === typeTab),
-    [bills, typeTab],
+    () =>
+      bills.filter(
+        (b) =>
+          (typeTab === "all" || b.type === typeTab) &&
+          matchesPlatform(b, activePlatformFilter),
+      ),
+    [bills, typeTab, activePlatformFilter],
   );
 
   const periodsForMode = useMemo(() => {
@@ -262,6 +288,7 @@ export default function BillListView({
     setFilterMode("all");
     setFilterPeriod(null);
     setTypeTab("all");
+    setPlatformFilter("all");
     setPage(1);
     if (storeId != null) selectStore(null);
   }
@@ -553,6 +580,52 @@ export default function BillListView({
             ))}
           </div>
         )}
+
+        {showPlatformFilter && (
+          <div
+            className="mk-storechips mt-2"
+            role="group"
+            aria-label="กรองตามช่องทางการขาย"
+          >
+            <button
+              type="button"
+              className="mk-chip mk-chip--sm"
+              aria-pressed={platformFilter === "all"}
+              onClick={() => {
+                setPlatformFilter("all");
+                resetPage();
+              }}
+            >
+              ทุกช่องทาง
+            </button>
+            {platforms.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="mk-chip mk-chip--sm"
+                aria-pressed={platformFilter === p.id}
+                onClick={() => {
+                  setPlatformFilter(p.id);
+                  resetPage();
+                }}
+              >
+                <PlatformLogo platform={p} size={18} />
+                {p.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="mk-chip mk-chip--sm"
+              aria-pressed={platformFilter === "none"}
+              onClick={() => {
+                setPlatformFilter("none");
+                resetPage();
+              }}
+            >
+              ไม่ระบุช่องทาง
+            </button>
+          </div>
+        )}
       </div>
 
       <div
@@ -827,7 +900,12 @@ function BillRow({
             </span>
           )}
         </span>
-        <span className="mk-billrow__name block">{bill.customerName}</span>
+        <span className="mk-billrow__name flex items-center gap-1.5">
+          {bill.platformType && (
+            <PlatformLogo platform={bill.platformType} size={20} />
+          )}
+          <span className="min-w-0 truncate">{bill.customerName}</span>
+        </span>
         <span className="mk-billrow__addr block">
           {bill.storeName ? `${bill.storeName} · ` : ""}
           {bill.customerAddress}

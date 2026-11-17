@@ -71,6 +71,18 @@ export interface BillListItem {
   itemCount: number;
   hasSlip: boolean;
   createdAt: string;
+  // Receipt bills only; null when none. Optional so an older backend that
+  // doesn't send it still type-checks.
+  platformType?: PlatformType | null;
+}
+
+// A sales platform (GET /platform-types) a receipt bill can be tagged with.
+export interface PlatformType {
+  id: number;
+  code: string;
+  name: string;
+  // Ready-to-use "/api/v1/files/..." path, or "" when it has no logo.
+  logoUrl: string;
 }
 
 // Shape returned by GET /bills/{id} — see responses.BillDetailResponse.
@@ -83,6 +95,9 @@ export interface Bill {
   storeAddress?: string;
   storePhone?: string;
   customerId?: number;
+  // Receipt bills only; null when none (always on payment bills).
+  platformTypeId?: number | null;
+  platformType?: PlatformType | null;
   bookNo: number;
   receiptNo: number;
   customerName: string;

@@ -39,6 +39,7 @@ import {
 } from "@/lib/in-app-browser";
 import { useToast } from "@/components/toast-provider";
 import SlipPanel from "@/components/bills/slip-panel";
+import PlatformLogo from "@/components/bills/platform-logo";
 import { ConfirmDelete } from "@/components/ui/overlay";
 import type { Bill, BillSlip } from "@/lib/types";
 
@@ -313,6 +314,12 @@ export default function BillDetailView({ bill: initialBill }: { bill: Bill }) {
               <span className="mk-badge bg-warning-100! text-warning-700!">
                 <Paperclip />
                 ยังไม่มีสลิป
+              </span>
+            )}
+            {bill.platformType && (
+              <span className="mk-badge bg-white/70!">
+                <PlatformLogo platform={bill.platformType} size={16} />
+                {bill.platformType.name}
               </span>
             )}
             {bill.storeName && (
