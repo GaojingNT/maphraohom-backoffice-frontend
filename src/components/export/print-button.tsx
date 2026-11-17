@@ -1,13 +1,20 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { Download, ExternalLink, Printer } from "lucide-react";
+import { Download, ExternalLink, Image as ImageIcon, Printer } from "lucide-react";
 import {
   detectInAppBrowser,
   externalBrowserUrl,
   type InAppBrowser,
 } from "@/lib/in-app-browser";
-import { buildA4Pdf, collectSheets, deliverPdf } from "@/lib/export/pdf";
+import {
+  buildA4Images,
+  buildA4Pdf,
+  collectSheets,
+  deliverFiles,
+  deliverPdf,
+  imageFileNames,
+} from "@/lib/export/pdf";
 import { useToast } from "@/components/toast-provider";
 
 // The user agent never changes, so there's nothing to subscribe to.
@@ -22,6 +29,11 @@ type PdfState =
   | { kind: "building" }
   // Built, but the browser wanted a fresh tap before sharing it.
   | { kind: "ready"; blob: Blob };
+
+type ImageState =
+  | { kind: "idle" }
+  | { kind: "building" }
+  | { kind: "ready"; blobs: Blob[] };
 
 // The export toolbars' actions. "บันทึก PDF" builds the A4 PDF in the
 // browser (lib/export/pdf.ts) so every device gets one bill per page — iOS
@@ -48,6 +60,7 @@ export default function PrintButton({
   const { showToast } = useToast();
   const [showHelp, setShowHelp] = useState(false);
   const [pdf, setPdf] = useState<PdfState>({ kind: "idle" });
+  const [image, setImage] = useState<ImageState>({ kind: "idle" });
 
   const buttonClass = "mk-btn mk-btn--primary flex-none";
 
@@ -113,7 +126,29 @@ export default function PrintButton({
     }
   }
 
+  async function deliverImages(blobs: Blob[]) {
+    const delivered = await deliverFiles(blobs, imageFileNames(fileName, blobs.length));
+    setImage(delivered ? { kind: "idle" } : { kind: "ready", blobs });
+  }
+
+  async function handleImage() {
+    if (image.kind === "ready") {
+      await deliverImages(image.blobs);
+      return;
+    }
+    const sheets = collectSheets();
+    if (sheets.length === 0) return;
+    setImage({ kind: "building" });
+    try {
+      await deliverImages(await buildA4Images(sheets));
+    } catch {
+      setImage({ kind: "idle" });
+      showToast("สร้างรูปไม่สำเร็จ ลองใหม่อีกครั้ง");
+    }
+  }
+
   const building = pdf.kind === "building";
+  const buildingImage = image.kind === "building";
 
   return (
     <div className="flex flex-none items-center gap-1.5">
@@ -129,8 +164,18 @@ export default function PrintButton({
       </button>
       <button
         type="button"
+        onClick={handleImage}
+        disabled={!ready || building || buildingImage}
+        aria-label={image.kind === "ready" ? "แตะเพื่อบันทึกรูป" : "บันทึกรูป"}
+        title={image.kind === "ready" ? "แตะเพื่อบันทึกรูป" : "บันทึกเป็นรูปภาพ (PNG)"}
+        className={`mk-btn flex-none px-0! w-11 ${image.kind === "ready" ? "mk-btn--primary" : "mk-btn--outline"}`}
+      >
+        {buildingImage ? <span className="mk-spin" /> : <ImageIcon />}
+      </button>
+      <button
+        type="button"
         onClick={handlePdf}
-        disabled={!ready || building}
+        disabled={!ready || building || buildingImage}
         className={buttonClass}
       >
         {!ready || building ? <span className="mk-spin" /> : <Download />}

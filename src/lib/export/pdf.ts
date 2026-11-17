@@ -102,11 +102,13 @@ function pageRanges(
   return ranges;
 }
 
-export async function buildA4Pdf(sheets: HTMLElement[]): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  let firstPage = true;
-
+// Renders every sheet and hands each finished A4 page (a white canvas) to
+// `onPage`. The canvas is freed afterwards, so `onPage` must consume it
+// (draw / encode) before its promise resolves.
+async function eachA4Page(
+  sheets: HTMLElement[],
+  onPage: (page: HTMLCanvasElement) => void | Promise<void>,
+): Promise<void> {
   for (const sheet of sheets) {
     const { canvas, cssWidth, cssHeight, cuts } = await renderSheet(sheet);
     const pxPerMm = cssWidth / A4_WIDTH_MM;
@@ -114,7 +116,8 @@ export async function buildA4Pdf(sheets: HTMLElement[]): Promise<Blob> {
     const margin = CONTINUATION_MARGIN_MM * pxPerMm;
     const ratio = canvas.width / cssWidth;
 
-    pageRanges(cssHeight, pageHeight, margin, cuts).forEach(([start, end], i) => {
+    const ranges = pageRanges(cssHeight, pageHeight, margin, cuts);
+    for (const [i, [start, end]] of ranges.entries()) {
       const top = i === 0 ? 0 : margin;
       const page = document.createElement("canvas");
       page.width = canvas.width;
@@ -129,46 +132,91 @@ export async function buildA4Pdf(sheets: HTMLElement[]): Promise<Blob> {
         0, Math.round(top * ratio), canvas.width, sliceHeight,
       );
 
-      if (!firstPage) pdf.addPage("a4", "portrait");
-      firstPage = false;
-      pdf.addImage(page, "JPEG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM, undefined, "FAST");
-      page.width = page.height = 0; // free memory right away (matters on iOS)
-    });
+      try {
+        await onPage(page);
+      } finally {
+        page.width = page.height = 0; // free memory right away (matters on iOS)
+      }
+    }
 
     canvas.width = canvas.height = 0;
   }
+}
+
+export async function buildA4Pdf(sheets: HTMLElement[]): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+  let firstPage = true;
+
+  await eachA4Page(sheets, (page) => {
+    if (!firstPage) pdf.addPage("a4", "portrait");
+    firstPage = false;
+    pdf.addImage(page, "JPEG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM, undefined, "FAST");
+  });
 
   return pdf.output("blob");
 }
 
-// Hands the finished PDF to the user: the share sheet on phones (save to
-// Files, send to LINE, or print from the correct PDF), a download elsewhere.
-// Returns false when the browser refused because the tap's user activation
-// ran out while the PDF was building — the caller then asks for one more tap.
-export async function deliverPdf(blob: Blob, fileName: string): Promise<boolean> {
-  const file = new File([blob], fileName, { type: "application/pdf" });
+// One PNG per A4 page — the same pages as the PDF. PNG (not JPEG) keeps
+// Thai tone marks and table lines crisp.
+export async function buildA4Images(sheets: HTMLElement[]): Promise<Blob[]> {
+  const blobs: Blob[] = [];
+  await eachA4Page(sheets, async (page) => {
+    const blob = await new Promise<Blob | null>((resolve) =>
+      page.toBlob(resolve, "image/png"),
+    );
+    if (!blob) throw new Error("PNG encoding failed");
+    blobs.push(blob);
+  });
+  return blobs;
+}
+
+// "sale-12-0034.pdf" → "sale-12-0034.png", or "sale-12-0034-2.png" when a
+// document spans several pages.
+export function imageFileNames(pdfFileName: string, count: number): string[] {
+  const base = pdfFileName.replace(/\.pdf$/i, "");
+  return Array.from({ length: count }, (_, i) =>
+    count === 1 ? `${base}.png` : `${base}-${i + 1}.png`,
+  );
+}
+
+// Hands the finished files to the user: the share sheet on phones (a PNG
+// offers "Save Image" → Photos; a PDF offers Files / LINE / print), plain
+// downloads elsewhere. Returns false when the browser refused because the
+// tap's user activation ran out while building — the caller then asks for
+// one more tap.
+export async function deliverFiles(blobs: Blob[], fileNames: string[]): Promise<boolean> {
+  const files = blobs.map((b, i) => new File([b], fileNames[i], { type: b.type }));
   const touch = window.matchMedia("(pointer: coarse)").matches;
 
-  if (touch && navigator.canShare?.({ files: [file] })) {
+  if (touch && navigator.canShare?.({ files })) {
     try {
-      await navigator.share({ files: [file], title: fileName });
+      await navigator.share({ files, title: fileNames[0] });
       return true;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return true; // closed the sheet
       if (err instanceof DOMException && err.name === "NotAllowedError") return false;
-      // Anything else: fall through to a plain download.
+      // Anything else: fall through to plain downloads.
     }
   }
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  for (const [i, file] of files.entries()) {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // Browsers drop back-to-back programmatic downloads without a gap.
+    if (i < files.length - 1) await new Promise((r) => setTimeout(r, 300));
+  }
   return true;
+}
+
+export function deliverPdf(blob: Blob, fileName: string): Promise<boolean> {
+  return deliverFiles([blob], [fileName]);
 }
 
 export function collectSheets(): HTMLElement[] {

@@ -574,8 +574,14 @@ export default function BillFormView({
 
   function leave() {
     setConfirmLeaveOpen(false);
-    if (editingBill) router.push(`/bills/${editingBill.id}`);
-    else router.push("/");
+    if (editingBill) {
+      // Cancelling edit pops the edit page off the history. Pushing the
+      // detail page instead leaves "edit" behind it, so the detail's own
+      // back button lands on the edit form again instead of the bill list.
+      // A page opened straight from a link has nothing behind it.
+      if (window.history.length > 1) router.back();
+      else router.push(`/bills/${editingBill.id}`);
+    } else router.push("/");
   }
 
   function handleCancel() {
@@ -637,7 +643,16 @@ export default function BillFormView({
         bill = await updateBill(editingBill.id, payload);
         setDirty(false);
         showToast("แก้ไขบิลเรียบร้อย");
-        router.push(`/bills/${bill.id}`);
+        if (window.history.length > 1) {
+          // Pop the edit page instead of pushing the detail page on top of
+          // it, so the detail's back button reaches the list rather than
+          // the edit form. refresh() drops the router cache first so the
+          // detail page we return to shows the saved values, not the old ones.
+          router.refresh();
+          router.back();
+        } else {
+          router.push(`/bills/${bill.id}`);
+        }
       } else {
         bill = await createBill(payload);
         setDirty(false);
