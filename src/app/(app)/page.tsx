@@ -3,6 +3,7 @@ import BillListView, {
 } from "@/components/bills/bill-list-view";
 import { getBills } from "@/lib/api/bills";
 import { getStores } from "@/lib/api/stores";
+import { getPlatformTypes } from "@/lib/api/platform-types";
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -15,7 +16,10 @@ export default async function Home(props: PageProps<"/">) {
   const searchParams = await props.searchParams;
   const mode = first(searchParams.mode);
   const store = Number(first(searchParams.store));
-  const stores = await getStores();
+  const [stores, platforms] = await Promise.all([
+    getStores(),
+    getPlatformTypes(),
+  ]);
   // A ?store= that isn't one of the user's stores means every store.
   const storeId =
     Number.isInteger(store) && stores.some((s) => s.id === store)
@@ -28,6 +32,11 @@ export default async function Home(props: PageProps<"/">) {
   };
   const bills = await getBills({ storeId });
   return (
-    <BillListView bills={bills} stores={stores} initialFilter={initialFilter} />
+    <BillListView
+      bills={bills}
+      stores={stores}
+      platforms={platforms}
+      initialFilter={initialFilter}
+    />
   );
 }

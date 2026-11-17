@@ -375,3 +375,15 @@ select.mk-input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http:/
 .mk-logotile img { width: 100%; height: 100%; object-fit: cover; }
 .mk-logotile svg { width: 22px; height: 22px; }
 }
+
+/* Sales platform (receipt bills) — logo, picker, list filter */
+.mk-platformlogo { display: inline-block; flex: none; border-radius: 6px; object-fit: cover; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.mk-platformlogo--text { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: var(--ink-muted); background: var(--surface-sunken); }
+.mk-platforms { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.mk-platform { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 76px; padding: 8px 2px;
+  border-radius: var(--radius-md, 12px); border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mk-platform[aria-pressed="true"] { border-color: var(--type, var(--sand-500)); background: var(--type-100, var(--sand-100)); }
+.mk-platform__name { max-width: 100%; font-size: 11.5px; font-weight: 600; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-platform__check { position: absolute; top: 4px; right: 4px; width: 16px; height: 16px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--type, var(--sand-500)); color: #fff; }
+.mk-platform__check svg { width: 10px; height: 10px; }

@@ -5,7 +5,7 @@ import BillTypeSheet from "@/components/bills/bill-type-sheet";
 import BillFormView from "@/components/bills/bill-form-view";
 import { isValidBillType } from "@/lib/bill-type";
 import type { ProductListItem } from "@/lib/api/products";
-import type { Store } from "@/lib/types";
+import type { PlatformType, Store } from "@/lib/types";
 
 // Guards /create: `type` must be "receipt" or "payment" — never silently
 // default to receipt, since that would issue the wrong kind of document
@@ -18,10 +18,12 @@ export default function CreateBillGuard({
   initialType,
   stores,
   products,
+  platforms,
 }: {
   initialType: string | undefined;
   stores: Store[];
   products: ProductListItem[];
+  platforms: PlatformType[];
 }) {
   const router = useRouter();
 
@@ -35,5 +37,12 @@ export default function CreateBillGuard({
     );
   }
 
-  return <BillFormView type={initialType} stores={stores} products={products} />;
+  return (
+    <BillFormView
+      type={initialType}
+      stores={stores}
+      products={products}
+      platforms={platforms}
+    />
+  );
 }

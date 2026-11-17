@@ -3,6 +3,7 @@ import BillFormView from "@/components/bills/bill-form-view";
 import { getBill } from "@/lib/api/bills";
 import { getProducts } from "@/lib/api/products";
 import { getStores } from "@/lib/api/stores";
+import { getPlatformTypes } from "@/lib/api/platform-types";
 
 export default async function EditBillPage(
   props: PageProps<"/bills/[id]/edit">,
@@ -18,13 +19,18 @@ export default async function EditBillPage(
     notFound();
   }
 
-  const [stores, products] = await Promise.all([getStores(), getProducts()]);
+  const [stores, products, platforms] = await Promise.all([
+    getStores(),
+    getProducts(),
+    getPlatformTypes(),
+  ]);
 
   return (
     <BillFormView
       type={bill.type}
       stores={stores}
       products={products}
+      platforms={platforms}
       editingBill={bill}
     />
   );

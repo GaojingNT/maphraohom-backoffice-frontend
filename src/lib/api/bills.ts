@@ -101,6 +101,9 @@ export interface CreateBillInput {
   discount: string;
   shippingFee: string;
   items: BillItemInput[];
+  // Receipt bills only (the backend rejects it on a payment bill). On PUT,
+  // null/omitted clears the bill's platform.
+  platformTypeId?: number | null;
   // ISO string to back-/post-date the bill — create only (the backend
   // ignores it on PUT /bills/:id, so UpdateBillInput never sets it).
   // Omitted -> the backend defaults to now.
